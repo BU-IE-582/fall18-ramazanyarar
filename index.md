@@ -8,6 +8,6 @@
 
 [Here](files/Homework1.html) is homework 1
 
-## Week 1 (October 25)
+## Week 2 (October 25)
 
 [Here](files/Homework2.html) is homework 2
