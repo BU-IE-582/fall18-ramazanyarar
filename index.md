@@ -10,4 +10,4 @@
 
 ## Week 1 (October 25)
 
-[Here](files/Homework3.html) is homework 1
+[Here](files/Homework2.html) is homework 2
