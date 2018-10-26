@@ -1,0 +1,454 @@
+---
+title: "Homework2"
+author: "Ramazan Yarar"
+date: "10/21/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data import
+
+```{r message = FALSE,warning = FALSE }
+library (data.table)
+library(ggbiplot)
+dt_odds<- readRDS("~/Documents/Dersler/Fall-2018/IE-582/df9b1196-e3cf-4cc7-9159-f236fe738215_odd_details.rds")
+dt_matches <- readRDS("~/Documents/Dersler/Fall-2018/IE-582/df9b1196-e3cf-4cc7-9159-f236fe738215_matches.rds")
+```
+
+
+# Data manipulation
+
+* Odds table
+```{r message = FALSE,warning = FALSE }
+# Filtering 5 bookmarkers and final odds
+
+dt_odds<-dt_odds[bookmaker %in% c("10Bet","bet365","Betsafe","bwin","bet-at-home")]
+
+dt_oddsf<-dt_odds[,rnk:=rank(-date,ties.method= "max"),
+                            by = list(matchId,betType,oddtype,bookmaker)][rnk==1]
+
+dt_oddss<-dt_oddsf[,.(matchId,bookmaker,betType,oddtype,odd)][betType %in% c("1x2","bts","ou","ha")]
+
+#transpoze for bet
+dt_oddst<-dcast(dt_oddss,matchId+bookmaker~betType+oddtype)
+
+#remove null odd (bcs we have enough instance)
+setnames(dt_oddst,c('1x2_odd1','1x2_odd2','1x2_oddX'),c("Home","Away","Tie"))
+dt_oddst<-na.omit(dt_oddst)
+```
+
+* Matches table
+
+```{r message = FALSE,warning = FALSE }
+# split score to compare
+dt_matches[,c("score1","score2"):= tstrsplit(score,":",fixed=TRUE)]
+dt_matches <- dt_matches[,score1:=as.integer(score1)] # to be ensure for calculation
+dt_matches <- dt_matches[,score2:=as.integer(score2)]
+dt_matches<-na.omit(dt_matches)
+# add column to decide Overstatus and Outcometype
+dt_matches$totalgoal <- dt_matches$score1 + dt_matches$score2
+dt_matches$Overstatus <- ifelse(dt_matches$totalgoal>2.5,"Over", "Under")
+dt_matches$Outcomes<-ifelse(dt_matches$score1>dt_matches$score2,"Home",ifelse(dt_matches$score1<dt_matches$score2,"Away","Tie"))
+```
+
+* merge table
+
+```{r message = FALSE,warning = FALSE }
+# I create setkey to join tables
+
+setkey(dt_oddst,matchId)
+setkey(dt_matches,matchId)
+
+# I joined tables 
+dt_merged <- merge(dt_oddst,unique(dt_matches),all.x=TRUE)[,.(matchId,Home,Away,Tie,bts_NO,bts_YES,ou_over,ou_under,Overstatus,bookmaker,ha_1,ha_2)]
+dt_merged<-na.omit(dt_merged)
+
+dt_merged2 <- merge(dt_oddst,unique(dt_matches),all.x=TRUE)[,.(matchId,Home,Away,Tie,bts_NO,bts_YES,ou_over,ou_under,Outcomes,bookmaker,ha_1,ha_2)]
+dt_merged2<-na.omit(dt_merged2)
+```
+
+
+
+
+## Task 1
+
+* PCA Analysis
+```{r message = FALSE,warning = FALSE }
+
+#filter data (I used the first 250 instance to plot)
+
+dt_merged<-dt_merged[1:250,.(Home,Away,Tie,bts_NO,bts_YES,ou_over,ou_under,ha_1,ha_2,Overstatus,bookmaker)]
+dt_merged.pca <- prcomp(dt_merged[,1:9],center = TRUE,scale. = TRUE)
+summary(dt_merged.pca)
+```
+
+
+PC1 encompass %43 of total variance, together with PC2 involves %65 of variance. They can provide  insight to data
+
+
+
+```{r message = FALSE,warning = FALSE }
+ggbiplot(dt_merged.pca,groups=dt_merged$Overstatus,scale = 0,choices = 1:2,obs.scale = 1, var.scale = 1,ellipse = TRUE)
+```
+
+ Away , ha_2 and ou_under Tie feature are  located close to each other. This indicates that  variables are correlated with each other. Also Home , ha_1 , ou_over variables are located closely, they are also correlated with each other. These feature may combine to feature reduction
+ 
+ Over and Under results correlated, they generally ploted same regions
+ 
+
+
+
+
+* MDS plotting for euclidean distance
+
+```{r message = FALSE,warning = FALSE }
+d_mcd<-dist(dt_merged[,-10],method = "euclidean")
+MDS = cmdscale(d_mcd)
+plot(MDS[, 1], MDS[, 2], pch = 21, bg = c("red", "green"))
+     #[unclass(dt_merged$Overstatus)])
+```
+
+* MDS plotting for manhattan distance
+
+```{r message = FALSE,warning = FALSE }
+d_mcd<-dist(dt_merged[,-10],method = "manhattan")
+MDS = cmdscale(d_mcd)
+plot(MDS[, 1], MDS[, 2], pch = 21, bg = c("red", "green"))
+```
+
+
+  Variables in Manhattan distance has smaller variance than euclidean distance. MDS plotting show us Over and Under have high correlation like PCA results
+
+
+# Task2
+
+ * PCA Analysis for matches outcomes
+
+```{r message = FALSE,warning = FALSE }
+# merge and filter matches outcome
+dt_merged2<-dt_merged2[1:250,.(Home,Away,Tie,bts_NO,bts_YES,ou_over,ou_under,ha_1,ha_2,Outcomes,bookmaker)]
+dt_merged2.pca <- prcomp(dt_merged2[,1:9],center = TRUE,scale. = TRUE)
+#names(dt_bet365.pca)
+print(dt_merged2.pca)
+summary(dt_merged2.pca)
+
+```
+
+
+PC1 encompass %43 of total variance, together with PC2 involves %65 of variance. 
+
+
+```{r message = FALSE,warning = FALSE }
+
+ggbiplot(dt_merged2.pca,groups=dt_merged2$Outcomes,scale = 0,choices = 1:2,obs.scale = 1, var.scale = 1,ellipse = TRUE)
+
+
+```
+
+Matches results are correlated each other. They are located similarly
+
+## Task 3
+
+* Read Image and Plot
+
+```{r message = FALSE,warning = FALSE }
+
+library(jpeg)
+image<-readJPEG("~/Documents/Dersler/Fall-2018/IE-582/image.jpg")
+plot(c(0, 512), c(0, 512), type = "n", xlab = "", ylab = "")
+rasterImage(image, 0, 0, 512, 512)
+
+```
+
+Data stored as numeric and dimensions are  [1:512, 1:512, 1:3]
+
+* Plot according to color channel
+
+```{r message = FALSE,warning = FALSE }
+# break into channel
+r <- image[,,1]
+g <- image[,,2]
+b <- image[,,3]
+
+#Multi plotting
+par(mfrow=c(1,3))
+image(t(r)[ncol(r):1,nrow(r):1])
+image(t(g)[ncol(g):1,nrow(g):1])
+image(t(b)[ncol(b):1,nrow(b):1])
+```
+
+
+* Crating Noisy Image
+
+```{r message = FALSE,warning = FALSE }
+
+# add noisy for every channel and pixel
+for (i in 1:512)
+  {for (j in 1:512)
+      {for (z in 1:3)
+             {
+        image[i,j,z]=image[i,j,z]+runif(1,min=0,max=0.1)
+        if(image[i,j,z]>1){
+              
+                image[i,j,z]=0.99
+                     }
+                else {image[i,j,z]}
+        
+                }
+        
+        }
+  
+}
+
+# Plot
+plot(c(0, 512), c(0, 512), type = "n", xlab = "", ylab = "")
+rasterImage(image, 0, 0, 512, 512)
+```
+
+* Noisy Image Channel Plotting
+
+```{r message = FALSE,warning = FALSE }
+#break into channel
+r <- image[,,1]
+g <- image[,,2]
+b <- image[,,3]
+
+par(mfrow=c(1,3))
+image(t(r)[ncol(r):1,nrow(r):1])
+image(t(g)[ncol(g):1,nrow(g):1])
+image(t(b)[ncol(b):1,nrow(b):1])
+```
+
+
+* PCA analysis for grayscale image
+
+```{r message = FALSE,warning = FALSE }
+library(jpeg)
+imagea=readJPEG("~/Documents/Dersler/Fall-2018/IE-582/imagegg.jpg")
+plot(c(0, 512), c(0, 512), type = "n", xlab = "", ylab = "")
+rasterImage(imagea, 0, 0, 512, 512)
+```
+
+* Patch Extractions
+
+```{r message = FALSE,warning = FALSE }
+
+# Loop is for extraction
+n=0
+m=0
+mt<-matrix(0,nrow=260100,ncol = 9)
+for (i in 2:510)
+  {for (j in 2:510)
+    { n=0
+    m=m+1
+      for (k in -1:1) 
+         {for (l in -1:1) 
+         {
+            n=n+1
+             mt[m,n]= imagea[i+k,j+l]
+       # print(c(i+k,j+l))
+       # print(c(m,n))
+          
+        }  
+        
+      }
+  }
+}
+ 
+# PCA analysis
+mt.pca<-prcomp(mt[,1:9],center = FALSE,scale. = FALSE)     
+summary(mt.pca)
+```
+
+PC1 consist  0.99 of total variance. It means that ??t provide insight for %99 of data
+
+
+* Reconstructing for first component
+
+```{r message = FALSE,warning = FALSE }
+
+#recall loops
+
+deneme<-mt.pca$x[,1]%*%t(mt.pca$rotation[,1])
+recall<-matrix(0,nrow=512,ncol = 512)
+
+n=10
+m=260101
+for (i in 510:2)
+  {for (j in 510:2)
+    { n=10
+     m=m-1
+      for (k in 1:-1) 
+         {for (l in 1:-1) 
+         {
+            n=n-1
+            if(deneme[m,n]>1)
+            {deneme[m,n]=1}
+            
+            recall[i+k,j+l]=deneme[m,n] 
+  
+        }  
+        
+      }
+  }
+}
+
+#Plot
+plot(c(0, 512), c(0, 512), type = "n", xlab = "", ylab = "")
+rasterImage(recall, 0, 0, 512, 512)
+```
+
+* For second component
+
+```{r message = FALSE,warning = FALSE }
+
+deneme2<-mt.pca$x[,2]%*%t(mt.pca$rotation[,2])
+
+recall2<-matrix(0,nrow=512,ncol = 512)
+
+n=10
+m=260101
+#mt<-matrix(0,nrow=260100,ncol = 9)
+for (i in 510:2)
+  {for (j in 510:2)
+    { n=10
+     m=m-1
+      for (k in 1:-1) 
+         {for (l in 1:-1) 
+         {
+            n=n-1
+            if(deneme2[m,n]<0)
+            {deneme2[m,n]=0}
+            
+            recall2[i+k,j+l]=deneme2[m,n] 
+                  
+        }  
+        
+      }
+  }
+}
+
+
+plot(c(0, 512), c(0, 512), type = "n", xlab = "", ylab = "")
+rasterImage(recall2, 0, 0, 512, 512)
+
+```
+
+* For third component
+```{r message = FALSE,warning = FALSE }
+deneme3<-mt.pca$x[,3]%*%t(mt.pca$rotation[,3])
+
+recall3<-matrix(0,nrow=512,ncol = 512)
+
+n=10
+m=260101
+#mt<-matrix(0,nrow=260100,ncol = 9)
+for (i in 510:2)
+  {for (j in 510:2)
+    { n=10
+     m=m-1
+      for (k in 1:-1) 
+         {for (l in 1:-1) 
+         {
+            n=n-1
+            
+            if(deneme3[m,n]<0)
+            {deneme3[m,n]=0}
+            
+            recall3[i+k,j+l]=deneme3[m,n] 
+                  
+  
+          
+        }  
+        
+      }
+  }
+}
+
+
+plot(c(0, 512), c(0, 512), type = "n", xlab = "", ylab = "")
+rasterImage(recall3, 0, 0, 512, 512)
+
+```
+
+* Task 4c for first component
+
+
+```{r message = FALSE,warning = FALSE }
+#Find Eigenvectors and transform image
+tsk4<-mt.pca$rotation[,1]
+imagev<-matrix(0,nrow=3,ncol = 3)
+
+m=9
+for (i in 1)
+  {for (j in 1)
+    { 
+     
+      imagev[i,j]=tsk4[m]*-1
+  
+    
+        }  
+        
+      }
+
+
+
+plot(c(0, 3), c(0, 3), type = "n", xlab = "", ylab = "")
+rasterImage(imagev, 0, 0, 3, 3)
+
+```
+
+* Task 4c for second component
+
+```{r message = FALSE,warning = FALSE }
+
+
+tsk42<-mt.pca$rotation[2,]
+imagev2<-matrix(0,nrow=3,ncol = 3)
+
+m=9
+#mt<-matrix(0,nrow=260100,ncol = 9)
+for (i in 1)
+  {for (j in 1)
+    { 
+     
+      imagev2[i,j]=tsk42[m]
+  
+    
+        }  
+        
+      }
+
+
+
+plot(c(0, 3), c(0, 3), type = "n", xlab = "", ylab = "")
+rasterImage(imagev2, 0, 0, 3, 3)
+
+```
+```{r message = FALSE,warning = FALSE }
+
+tsk43<-mt.pca$rotation[3,]
+imagev3<-matrix(0,nrow=3,ncol = 3)
+
+m=9
+for (i in 1)
+  {for (j in 1)
+    { 
+     
+      imagev3[i,j]=tsk43[m]* -1
+  
+    
+        }  
+        
+      }
+
+
+
+plot(c(0, 3), c(0, 3), type = "n", xlab = "", ylab = "")
+rasterImage(imagev3, 0, 0, 3, 3)
+
+```
+

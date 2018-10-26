@@ -7,3 +7,7 @@
 ## Week 1 (October 18)
 
 [Here](files/Homework1.html) is homework 1
+
+## Week 1 (October 25)
+
+[Here](files/Homework3.html) is homework 1
