@@ -11,3 +11,7 @@
 ## Week 2 (October 25)
 
 [Here](files/Homework2.html) is homework 2
+
+## Week 3 (November 19)
+
+[Here](files/Homework_3.html) is homework 3
