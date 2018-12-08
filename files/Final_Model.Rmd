@@ -1,0 +1,431 @@
+---
+title: "Final Model"
+author: "Ramazan Yarar"
+date: "11/30/2018"
+output: html_document
+---
+
+#Data Import
+```{r setup, include=FALSE}
+library(pracma)
+library (data.table)
+dt_odds<- readRDS("/Users/esinakgul/Documents/BOUN/4-1/IE 582/HOMEWORK/Homework 1/df9b1196-e3cf-4cc7-9159-f236fe738215_odd_details.rds")
+dt_matches <- readRDS("/Users/esinakgul/Documents/BOUN/4-1/IE 582/HOMEWORK/Homework 1/df9b1196-e3cf-4cc7-9159-f236fe738215_matches.rds")
+
+```
+
+## Odd Preprocessing
+
+
+```{r cars}
+
+
+dt_odds<-dt_odds[betType=="1x2"& date>1470065598]
+dt_odds<-dt_odds[,.(matchId,bookmaker,oddtype,date,odd)]
+dt_odds[,rnk:=rank(-date,ties.method= "min"),by = list(matchId,oddtype,bookmaker)]
+dt_oddsl<-dt_odds[rnk==1]
+dt_odds_pvt <- dcast(dt_oddsl[,.(matchId,bookmaker,oddtype,odd)],matchId+bookmaker ~ oddtype) ## Test edilmeli
+dt_odds_pvt$homeprob <-as.numeric((1/dt_odds_pvt$odd1)*(1/((1/dt_odds_pvt$odd1)+(1/dt_odds_pvt$odd2)+(1/dt_odds_pvt$oddX))))
+dt_odds_pvt$awayprob <-as.numeric((1/dt_odds_pvt$odd2)*(1/((1/dt_odds_pvt$odd1)+(1/dt_odds_pvt$odd2)+(1/dt_odds_pvt$oddX))))
+dt_odds_pvt$drawprob <-as.numeric((1/dt_odds_pvt$oddX)*(1/((1/dt_odds_pvt$odd1)+(1/dt_odds_pvt$odd2)+(1/dt_odds_pvt$oddX))))
+
+analysisn<-dt_odds_pvt[bookmaker=="bet365"]
+```
+
+
+
+## Odd Esin
+```{r}
+
+dt_oddsls<-dt_odds[rnk==1]
+dt_odds_pvts <- dcast(dt_oddsls[,.(matchId,bookmaker,oddtype,odd)],matchId+bookmaker ~ oddtype) ## Test edilmeli
+dt_odds_pvts$homeprob <-as.numeric((1/dt_odds_pvt$odd1))
+dt_odds_pvts$awayprob <-as.numeric((1/dt_odds_pvt$odd2))
+dt_odds_pvts$drawprob <-as.numeric((1/dt_odds_pvt$oddX))
+
+
+analysiss<-dt_odds_pvts[bookmaker=="bet365"]
+#tekrar bak fonksyon i??ine almaya ??al????
+
+  
+ analysiss[,newhomeprob:=0]
+analysiss[,newdrawprob:=0]
+analysiss[,newawayprob:=0]
+
+
+
+# dt_odds_pvts[,newhomeprob:=0]
+# dt_odds_pvts[,newdrawprob:=0]
+# dt_odds_pvts[,newawayprob:=0]
+
+
+z_value <- function(a){
+  #ncol yap 
+  for(i in 1:nrow(a)){
+  #a=as.matrix(a)
+  sum=a[i,c("homeprob")]+a[i,c("drawprob")]+a[i,c("awayprob")]
+  b=bisect(function(z) (((sqrt(z^2+(4*(1-z)*a[i,c("homeprob")]^2)/sum)+sqrt(z^2+(4*(1-z)*a[i,c("drawprob")]^2)/sum)+sqrt(z^2+(4*(1-z)*a[i,c("awayprob")]^2)/sum))))-2-z, 0, 1 )$root
+  homeprob=(sqrt((b^2)+(4*(1-b)*(a[i,c("homeprob")]^2)/sum))-b)/(2*(1-b))
+  drawprob=(sqrt((b^2)+(4*(1-b)*(a[i,c("drawprob")]^2)/sum))-b)/(2*(1-b))
+  awayprob=(sqrt((b^2)+(4*(1-b)*(a[i,c("awayprob")]^2)/sum))-b)/(2*(1-b))
+  newprob=c(homeprob, drawprob, awayprob)
+  newprob=t(newprob)
+  newprob=data.frame(newprob)
+  
+  a[i,c("newhomeprob")]=homeprob
+  a[i,c("newdrawprob")]=drawprob
+  a[i,c("newawayprob")]=awayprob
+  
+  }
+
+  return(a)
+}
+
+
+odds_shin<-z_value(analysiss)
+
+```
+
+## Match Dataprocessing 
+
+
+```{r , echo=FALSE}
+#19 10 August 2018-
+#18 11 August 2017-13 May 2018
+#17 13 August 2016- 21 May 2017 --- ertelenen ma?? var m?? bak, Shiny denklem ????z??m??
+
+
+
+dt_matches[,c("HomeGoal","AwayGoal"):= tstrsplit(score,":",fixed=TRUE)]
+dt_matches <- dt_matches[,date:=as.Date(as.POSIXct(date,origin="1970-01-01",tz = "UTC",tryformats="%Y/%m/%d"))]
+#season1<-dt_matches[date>="2018-08-01"]
+dt_matches[,`:=`(MatchResult = ifelse(HomeGoal == AwayGoal, "Tie" , ifelse(HomeGoal > AwayGoal, 'Home' , 'Away')))]
+
+dt_matches[,`:=`(ResultHome = ifelse(MatchResult=="Home",1,0)
+             ,ResultTie = ifelse(MatchResult=="Tie",1,0)
+             ,ResultAway = ifelse(MatchResult=="Away",1,0))]
+
+
+
+```
+
+
+
+# combine odd and matches
+
+```{r}
+
+#19 10 August 2018-
+#18 11 August 2017-13 May 2018
+#17 13 August 2016- 21 May 2017 --- ertelenen ma?? var m?? bak, Shiny denklem ????z??m??
+
+
+
+setkey(dt_matches,matchId)
+setkey(dt_odds_pvt,matchId)
+dt_merged <- merge(dt_odds_pvt,unique(dt_matches),all.y =TRUE)
+#dt_dataset<-na.omit(dt_merged)
+dt_matches<-unique(dt_matches)
+
+```
+
+## split season
+
+```{r}
+
+dt_season12<-dt_merged[date>="2017-08-01" ]
+dt_season1<-dt_merged[date>="2018-08-01"]
+dt_season2<-dt_merged[date>="2017-08-01" & date<="2018-06-01"]
+dt_season3<-dt_merged[date>="2016-08-01" & date<="2017-06-01"]
+
+upcoming_matches<-dt_season1[date>="2018-11-30"]
+upcoming_matches<-upcoming_matches[bookmaker=='Pinnacle']
+
+```
+
+
+```{r}
+
+```
+
+
+## analysis 
+
+
+```{r}
+
+
+RPS_matrix <- function(probs,outcomes){
+  probs=as.matrix(probs)
+  outcomes=as.matrix(outcomes)
+  probs=t(apply(t(probs), 2, cumsum))
+  outcomes=t(apply(t(outcomes), 2, cumsum))
+  RPS = apply((probs-outcomes)^2,1,sum) / (ncol(probs)-1)
+  return(RPS) 
+
+  }
+  
+ # remove(dt_season1)
+  season1_rps<-RPS_matrix(dt_season1[,.(homeprob,drawprob,awayprob)],dt_season1[,.(ResultHome,ResultTie,ResultAway)])
+
+  dt_season1$rps<-data.frame(season1_rps)
+  
+   ab<-dt_season1[bookmaker=="Pinnacle"]
+
+
+  dt_rpsaveragem<-dt_season1[,mean(rps),by = bookmaker]
+  dt_rpsaveragec<-dt_season1[,.N,by = bookmaker]
+  
+  
+  
+  
+  ## RPS ma??lar??n ??zellikleri neler
+  
+```
+
+
+## Add feature-- one book maker
+
+
+```{r}
+
+#feature selection
+
+dt_matches<-unique(dt_matches)
+dt_matches<-na.omit(dt_matches)
+
+season2<-dt_matches[date>="2017-08-01" & date<"2018-08-01"]
+
+
+fixture_create = function(data)
+{
+  
+data[,`:=`(HomeGrade = ifelse(MatchResult == "Home", 1 , ifelse(MatchResult == "Tie", 0.5 , 0)))]
+data[,`:=`(AwayGrade = ifelse(MatchResult == "Away", 1 , ifelse(MatchResult == "Tie", 0.5 , 0)))]
+
+dt_Awaymatches<-data[,.(matchId,date,away,AwayGrade,AwayGoal,HomeGoal,MatchResult)]
+dt_Awaymatches[,HAWeek:=rank(date,ties.method= "min"),by = list(away)]
+dt_Awaymatches$Status=1
+setnames(dt_Awaymatches,old = c("away","AwayGrade","AwayGoal","HomeGoal"),new = c("Team","Grade","SGoal","CGoal"))
+
+dt_Homematches<-data[,.(matchId,date,home,HomeGrade,HomeGoal,AwayGoal,MatchResult)]
+dt_Homematches[,HAWeek:=rank(date,ties.method= "min"),by = list(home)]
+setnames(dt_Homematches,old = c("home","HomeGrade","HomeGoal","AwayGoal"),new = c("Team","Grade","SGoal","CGoal"))
+dt_Homematches$Status=0
+dt_fixture<-rbind(dt_Homematches,dt_Awaymatches)
+dt_fixture<-dt_fixture[order(Team,date)]
+dt_fixture<-dt_fixture[,TotalGrade:=cumsum(Grade), by = list(Team)]
+dt_fixture[,week:=rank(date,ties.method= "min"),by = list(Team)]
+return(dt_fixture)
+}
+
+
+fixture<-fixture_create(season2)
+#format( matchId,home,away)
+
+feature_extract = function(data){
+  
+  for(i in 1:nrow(data))#nrow(data))
+  {
+    matchid=data[i,c("matchId")]
+    homeTeam=data[i,c("home")]
+    awayTeam=data[i,c("away")]
+    homeGrade=fixture[matchId==matchid & Team==homeTeam&Status==0][i,c("TotalGrade")]
+    awayGrade=fixture[matchId==matchid & Team==awayTeam&Status==1][i,c("TotalGrade")]
+    
+    hwk=as.numeric(fixture[matchId==matchid &Status==1][i,c("HAWeek")])
+    hwkp=as.numeric(ifelse(hwk>2,hwk-2,hwk))
+    
+    
+    #deneme<-data[hwkp:hwk,]
+    
+    awk=as.numeric(fixture[matchId==matchid &Status==0][i,c("HAWeek")])
+    awkp=as.numeric(ifelse(awk>2,awk-2,awk))
+    
+    
+    data[,HomeTotalGrade:=homeGrade]
+    data[,AwayTotalGrade:=awayGrade]
+    
+    #deneme<-fixture[ Team==homeTeam&Status==0][hwkp:hwk,c("SGoal")]
+    df_homeL3SGoal=fixture[ Team==homeTeam&Status==0][hwkp:hwk,c("SGoal")]
+    homeL3SGoal=mean(as.numeric(df_homeL3SGoal$SGoal))
+    
+    df_homeL3CGoal=fixture[ Team==homeTeam&Status==0][hwkp:hwk,c("CGoal")]
+    homeL3CGoal=mean(as.numeric(df_homeL3CGoal$CGoal))
+    
+    #hometawayL3SGoal=mean(as.numeric(fixture[ Team==homeTeam&Status==1][ifelse(hwk>2,hwk:hwk-2,hwk),c("SGoal")]))
+    #hometawayL3CGoal=mean(as.numeric(fixture[ Team==homeTeam&Status==1][ifelse(hwk>2,hwk:hwk-2,hwk),c("CGoal")]))
+    
+    data[,homeL3SGoal:=homeL3SGoal]
+    data[,homeL3CGoal:=homeL3CGoal]
+    #data[,hometawayL3SGoal:=hometawayL3SGoal]
+    #data[,hometawayL3CGoal:=hometawayL3CGoal]
+    
+    df_awayL3SGoal=fixture[ Team==awayTeam&Status==1][awkp:awk,c("SGoal")]
+    awayL3SGoal=mean(as.numeric(df_awayL3SGoal$SGoal))
+    
+    
+    df_awayL3CGoal=fixture[ Team==awayTeam&Status==1][awkp:awk,c("CGoal")]
+    awayL3CGoal=mean(as.numeric(df_awayL3CGoal$CGoal))
+  
+    
+    data[,awayL3SGoal:=awayL3SGoal]
+    data[,awayL3CGoal:=awayL3CGoal]
+    
+   
+  }
+  return(data)
+}
+
+
+s<-feature_extract(season2[3,])
+
+
+as.numeric(d[15:17,c("SGoal")])
+a<-feature_extract(season2[3,])
+
+
+
+```
+
+## Model
+
+
+
+```{r}
+
+require(data.table)
+require(TunePareto)
+require(glmnet)
+train_glmnet <- function(train_features, test_features,not_included_feature_indices=c(1:5), alpha=1,nlambda=10, tune_lambda=TRUE,nofReplications=2,nFolds=10,trace=T){
+
+    set.seed(1)
+
+    # glmnet works with complete data
+    glm_features=train_features[complete.cases(train_features)]
+    train_class=glm_features$MatchResult
+    glm_train_data=glm_features[,-not_included_feature_indices,with=F]
+    glm_test_data=test_features[,-not_included_feature_indices,with=F]
+    if(tune_lambda){
+        # to set lambda parameter, cross-validation will be performed and lambda is selected based on RPS performance
+
+        cvindices=generateCVRuns(train_class,nofReplications,nFolds,stratified=TRUE)
+        
+        # first get lambda sequence for all data
+        glmnet_alldata = glmnet(as.matrix(glm_train_data), as.factor(train_class), family="multinomial", alpha = alpha, nlambda=nlambda)
+        lambda_sequence = glmnet_alldata$lambda
+            
+        cvresult=vector('list',nofReplications*nFolds)
+        iter=1
+        for(i in 1:nofReplications) {
+            thisReplication=cvindices[[i]]
+            for(j in 1:nFolds){
+                if(trace){
+                    cat(sprintf('Iteration %d: Fold %d of Replication %d\n',iter,j,i))
+                }
+                testindices=order(thisReplication[[j]])
+                
+                cvtrain=glm_train_data[-testindices]    
+                cvtrainclass=train_class[-testindices]   
+                cvtest=glm_train_data[testindices]
+                cvtestclass=train_class[testindices] 
+                
+                inner_cv_glmnet_fit = glmnet(as.matrix(cvtrain),as.factor(cvtrainclass),family="multinomial", alpha = alpha,lambda=lambda_sequence)
+                valid_pred = predict(inner_cv_glmnet_fit, as.matrix(cvtest), s = lambda_sequence, type = "response")
+        
+                #check order of predictions
+                order_of_class=attr(valid_pred,'dimnames')[[2]]
+                new_order=c(which(order_of_class=='Home'),which(order_of_class=='Tie'),which(order_of_class=='Away'))
+                foldresult=rbindlist(lapply(c(1:length(lambda_sequence)),function(x) { data.table(repl=i,fold=j,lambda=lambda_sequence[x],valid_pred[,new_order,x],result=cvtestclass)}))
+                cvresult[[iter]]=foldresult
+                iter=iter+1
+            }
+        }
+        
+        cvresult=rbindlist(cvresult)
+        
+        # creating actual targets for rps calculations
+        cvresult[,pred_id:=1:.N]
+        outcome_for_rps=data.table::dcast(cvresult,pred_id~result,value.var='pred_id')
+        outcome_for_rps[,pred_id:=NULL]
+        outcome_for_rps[is.na(outcome_for_rps)]=0
+        outcome_for_rps[outcome_for_rps>0]=1
+        setcolorder(outcome_for_rps,c('Home','Tie','Away'))
+        
+        # calculate RPS
+        overall_results=data.table(cvresult[,list(repl,fold,lambda)],RPS=RPS_matrix(cvresult[,list(Home,Tie,Away)],outcome_for_rps))
+        
+        # summarize performance for each lambda
+        overall_results_summary=overall_results[,list(RPS=mean(RPS)),list(repl,fold,lambda)]
+    
+        # find best lambdas as in glmnet based on RPS
+        overall_results_summary=overall_results_summary[,list(meanRPS=mean(RPS),sdRPS=sd(RPS)),list(lambda)]
+        overall_results_summary[,RPS_mean_lb := meanRPS - sdRPS]
+        overall_results_summary[,RPS_mean_ub := meanRPS + sdRPS]
+        
+        cv_lambda_min=overall_results_summary[which.min(meanRPS)]$lambda
+        
+        semin=overall_results_summary[lambda==cv_lambda_min]$RPS_mean_ub
+        cv_lambda.1se=max(overall_results_summary[meanRPS<semin]$lambda)
+        
+        cvResultsSummary = list(lambda.min =cv_lambda_min, lambda.1se = cv_lambda.1se,
+                            meanRPS_min=overall_results_summary[lambda==cv_lambda_min]$meanRPS,
+                            meanRPS_1se=overall_results_summary[lambda==cv_lambda.1se]$meanRPS)
+    
+    }
+    
+    # fit final glmnet model with the lambda with minimum error
+    final_glmnet_fit = glmnet(as.matrix(glm_train_data),as.factor(train_class),family="multinomial", alpha = alpha,lambda=cvResultsSummary$lambda.min)
+    # obtain predictions
+    predicted_probabilities=predict(final_glmnet_fit, as.matrix(glm_test_data), type = "response")
+    
+    #check order of predictions
+    order_of_class=attr(predicted_probabilities,'dimnames')[[2]]
+    new_order=c(which(order_of_class=='Home'),which(order_of_class=='Tie'),which(order_of_class=='Away'))
+    
+    final_result=data.table(test_features[,list(matchId,MatchResult)],predicted_probabilities[,new_order,1])
+    
+    return(list(predictions=final_result,cv_stats=cvResultsSummary))
+}
+
+match_odd=merge(dt_matches,dt_odds_pvt, by='matchId')
+
+#test & train tarihleri de??i??tirilebilir
+testStart=as.Date('2017-11-16')
+trainStart=as.Date('2016-07-15')
+
+ #featurelar??n ne oldu??u tan??t??lmal??
+match_odd[,TotalGoals:=as.numeric(HomeGoal)+as.numeric(AwayGoal)]
+
+#hoca fonksiyonu kurarken 1:5 aras?? diye kurdu??u i??in fonksiyonda o ??ekilde ilerliyor. Son liste geldikten sonra fonksiyona girmeden ona g??re d??zenlemek laz??m. 
+
+match_odd_features=match_odd[,c(1,4:6,10,17:20)]
+setnames(match_odd_features, old=c("homeprob", "drawprob", "awayprob") ,new=c("Home", "Tie","Away"))
+
+train_features=match_odd_features[date>=trainStart & date<testStart] 
+test_features=match_odd_features[date>=testStart] 
+
+predictions=train_glmnet(train_features, test_features, not_included_feature_indices=c(1:5), alpha=1,nlambda=10, tune_lambda=TRUE,nofReplications=1,nFolds=10,trace=T)
+data_predictions=predictions$predictions
+
+
+
+
+```
+
+
+```{r}
+matchId=c("8pSKbJs5","ja8YPGUS","Qia0Lzwp","8Gl5Kfhj", "zNtirbpc", "EDuesIa3","dxVatxF9 ", "dx9UQdFM","IoAQRx0G", "n7m9JE7d" )
+leagueId=c("1,1,1,1,1,1,1,1,1,1")
+odd1=c("3.79", "1.61", "2.50", "2.30", "1.13", "2.51", "4.51","1.18","2.64", "1.40")
+date=c("2018.11.30","2018.11.30","2018.11.30","2018.11.30","2018.11.30","2018.11.30","2018.11.30","2018.11.30","2018.11.30","2018.11.30" )
+MatchResult=c("1","1","1","1","1","1","1","1","1","1")
+AwayTotalGrade=c("5", "3","4.5","4", "4.5","4.5", "6.5","2","7","6")
+HomeTotalGrade=c("2","2.5","3.5","4.5","9.5"," 4", "3","7","8.5","8.5")
+homeprob=c("0.2589","0.6068","0.3922","0.4266","0.8583","0.3909","0.2172","0.8181","0.3719","0.6979")
+drawprob=c("0.3010","0.2486","0.3226","0.2787","0.0968","0.2955","0.2669","0.1231","0.2735","0.1889")
+awayprob=c("0.4400","0.1445","0.2850","0.2946","0.0448","0.3135","0.5157","0.0586","0.3534","0.1130")
+
+predictmatch=data.frame(matchId, leagueId,odd1, date, MatchResult, AwayTotalGrade,HomeTotalGrade, homeprob, drawprob, awayprob)
+```
+
