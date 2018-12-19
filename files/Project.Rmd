@@ -47,57 +47,7 @@ dt_odds_pvt$drawprob <-as.numeric((1/dt_odds_pvt$oddX)*(1/((1/dt_odds_pvt$odd1)+
 
 
 
-## Odd Esin
-```{r}
 
-dt_oddsls<-dt_odds[rnk==1 & date>1533151297]
-dt_odds_pvts <- dcast(dt_oddsls[,.(matchId,bookmaker,oddtype,odd)],matchId+bookmaker ~ oddtype) ## Test edilmeli
-dt_odds_pvts$homeprob <-as.numeric((1/dt_odds_pvt$odd1))
-dt_odds_pvts$awayprob <-as.numeric((1/dt_odds_pvt$odd2))
-dt_odds_pvts$drawprob <-as.numeric((1/dt_odds_pvt$oddX))
-
-
-analysiss<-dt_odds_pvts[bookmaker=="Pinnacle"]
-#tekrar bak fonksyon i??ine almaya ??al????
-
-  
-analysiss[,newhomeprob:=0]
-analysiss[,newdrawprob:=0]
-analysiss[,newawayprob:=0]
-
-
-
-# dt_odds_pvts[,newhomeprob:=0]
-# dt_odds_pvts[,newdrawprob:=0]
-# dt_odds_pvts[,newawayprob:=0]
-
-
-z_value <- function(a){
-  #ncol yap 
-  for(i in 1:nrow(a)){
-  #a=as.matrix(a)
-  sum=a[i,c("homeprob")]+a[i,c("drawprob")]+a[i,c("awayprob")]
-  b=bisect(function(z) (((sqrt(z^2+(4*(1-z)*a[i,c("homeprob")]^2)/sum)+sqrt(z^2+(4*(1-z)*a[i,c("drawprob")]^2)/sum)+sqrt(z^2+(4*(1-z)*a[i,c("awayprob")]^2)/sum))))-2-z, 0, 1 )$root
-  homeprob=(sqrt((b^2)+(4*(1-b)*(a[i,c("homeprob")]^2)/sum))-b)/(2*(1-b))
-  drawprob=(sqrt((b^2)+(4*(1-b)*(a[i,c("drawprob")]^2)/sum))-b)/(2*(1-b))
-  awayprob=(sqrt((b^2)+(4*(1-b)*(a[i,c("awayprob")]^2)/sum))-b)/(2*(1-b))
-  newprob=c(homeprob, drawprob, awayprob)
-  newprob=t(newprob)
-  newprob=data.frame(newprob)
-  
-  a[i,c("newhomeprob")]=homeprob
-  a[i,c("newdrawprob")]=drawprob
-  a[i,c("newawayprob")]=awayprob
-  
-  }
-
-  return(a)
-}
-
-
-odds_shin<-z_value(analysiss)
-
-```
 
 ## Match Dataprocessing 
 
@@ -123,7 +73,6 @@ dt_matches[,`:=`(ResultHome = ifelse(MatchResult=="Home",1,0)
 dt_matches<-unique(dt_matches)
 
 ```
-
 
 
 # combine odd and matches
@@ -165,7 +114,7 @@ dt_dataset<-unique(dt_dataset)
 
 #dt_season12<-dt_dataset[date>="2017-08-01" ] 2018-12-04
 # burada son hafta ile bu sezonu s??n??rlad??m, birde isim de??i??ikl??i olan ba??ka tak??mlarda var
-dt_season1<-dt_dataset[date>="2018-08-01"& date<="2018-12-10"][bookmaker=="Pinnacle"]
+dt_season1<-dt_dataset[date>="2018-08-01"& date<="2018-12-19"][bookmaker=="Pinnacle"]
 dt_season2<-dt_dataset[date>="2017-08-01" & date<="2018-06-07"][bookmaker=="Pinnacle"]
 dt_season3<-dt_dataset[date>="2016-08-01" & date<="2017-06-07"][bookmaker=="Pinnacle"]
 dt_season4<-dt_dataset[date>="2015-08-01" & date<="2016-06-07"][bookmaker=="Pinnacle"]
@@ -173,6 +122,7 @@ dt_season5<-dt_dataset[date>="2014-08-01" & date<="2015-06-07"][bookmaker=="Pinn
 #isim testi
 #unique(dt_season2$away)
 
+#
 dt_season2$home[dt_season2$home %in% "stoke"] <-"stoke city"
 dt_season2$away[dt_season2$away %in% "stoke"] <-"stoke city"
 
@@ -184,7 +134,7 @@ dt_season1$home[dt_season1$home %in% "manchester-utd"] <-"manchester-united"
 dt_season1$away[dt_season1$away %in% "manchester-utd"] <-"manchester-united"
 
 
-
+unique(dt_season5$bookmaker)
 
 #dt_season1<-dt_dataset[date>="2017-08-01"&& date<="2018-09-01"][bookmaker=="Pinnacle"]
 
@@ -230,13 +180,27 @@ performance_analysis<-function(data){
   data_rps<-RPS_matrix(data[,.(homeprob,drawprob,awayprob)],data[,.(ResultHome,ResultTie,ResultAway)])
 
   data$rps<-data.frame(data_rps)
- 
-  dt_performancesummary<-data[,mean(rps),by = bookmaker]
-  return(dt_performancesummary)
+  #data$difference<-data$homeprob-data$awayprob
+  #dt_performancesummary<-data[,mean(rps),by = bookmaker]
+  return(data)#dt_performancesummary)
 }
 
 
-#season1_performance<-performance_analysis(dt_season1)
+season1_performance<-performance_analysis(dt_season1)
+season1_performance<-season1_performance[rps>0.3]
+dt_performancesummary<-season1_performance[,mean(rps),by = bookmaker]
+matchcount<-dt_season1[,.N,by = bookmaker]
+
+winratio<-fixture[,median(WinProbratio),by = Team]
+a<-fixture[,mean(rps,na.rm = TRUE),by = Team]
+
+plot(winratio$V1,a$V1)
+
+season1_performance$difference<-abs(season1_performance$homeprob-season1_performance$awayprob)
+
+
+season1_performance<-season1_performance[difference<0.3]
+plot(season1_performance$difference,season1_performance$rps,type = "l")
 
 #season2_performance<-performance_analysis(dt_season2)
 #season3_performance<-performance_analysis(dt_season3)
@@ -328,6 +292,8 @@ oldrps<-RPS_matrix(dt_fixture[,.(homeprob,drawprob,awayprob)],dt_fixture[,.(Resu
   
 dt_fixture$rps<-data.frame(oldrps)
 
+fixture[,`:=`(WinProbratio = ifelse(Status == 0, homeprob/awayprob,awayprob/homeprob))]
+
 
 return(dt_fixture)
 }
@@ -350,6 +316,7 @@ feature_extract = function(data){
   data[,awayL3defeatcount:=0]
   data[,homeOldRps:=0]
   data[,awayOldRps:=0]
+  data[,week:=0]
   #data[,GradeDifference:=0]
   
   
@@ -451,12 +418,14 @@ feature_extract = function(data){
      
     data[i,c("homeOldRps")]=homeOldRps
     data[i,c("awayOldRps")]=awayOldRps
-  
+    
+  #week
+    week=as.numeric(max(fixture[matchId==matchid][,c("week")]))
+    data[i,c("week")]=week
      
   }
   return(data)
 }
-
 
 
 
@@ -487,8 +456,11 @@ model_data_sz5<-feature_extract(dt_season5)
 
 
 model_data<-rbind(model_data_sz1,model_data_sz2,model_data_sz3,model_data_sz4,model_data_sz5)
+model_data<-model_data[week<30]
 
-model_data<-model_data[,c("matchId","leagueId","odd1","date","MatchResult","homeprob","drawprob","AwayTotalGrade","HomeTotalGrade","homeOldRps","awayOldRps","homeL3wincount","homeL3defeatcount","awayL3wincount","awayL3defeatcount")]
+model_data<-model_data[,c("matchId","leagueId","odd1","date","MatchResult","homeprob","drawprob","AwayTotalGrade","HomeTotalGrade","homeOldRps","awayOldRps")]
+                          
+                          #"homeL3wincount","homeL3defeatcount","awayL3wincount","awayL3defeatcount")]
                           #"homeOldRps","awayOldRps","homeL3wincount","awayL3wincount")]
                          # ,"homeL3wincount","homeL3defeatcount","awayL3wincount","awayL3defeatcount")]
          #                 "homeOldRps","awayOldRps", "homeL3wincount","awayL3wincount")]
@@ -496,8 +468,8 @@ model_data<-model_data[,c("matchId","leagueId","odd1","date","MatchResult","home
       #                    ,"homeL3wincount","homeL3defeatcount","awayL3wincount","awayL3defeatcount")]
 
 
-train.data<- model_data[date<"2018-12-07"] # 70% data goes in here 2018-12-03
-test.data<- model_data[date>="2018-12-07"]
+train.data<- model_data[date<"2018-12-15"] # 70% data goes in here 2018-12-03
+test.data<- model_data[date>="2018-12-15"]
 
 #cor(model_data[,6:16])
 
@@ -625,6 +597,8 @@ train_glmnet <- function(train_features, test_features,not_included_feature_indi
 
 
 ```
+
+
 
 ```{r}
 #model

@@ -1,0 +1,994 @@
+---
+title: "Homework_4"
+author: "Ramazan Yarar"
+date: "12/9/2018"
+output: html_document
+---
+
+
+## Homework_4
+
+# Dataset1
+
+The dataset is about bankruptcy prediction of Polish companies.The data contains financial rates from 5th year of the forecasting period and corresponding class label that indicates bankruptcy status after 1 year. The data contains 5910 instances (financial statements), 410 represents bankrupted companies, 5500 firms that did not bankrupt in the forecasting period. It is example for imbalanced data
+
+
+```{r , message=TRUE,error=FALSE}
+#library
+library(dplyr)
+library(earth)
+library(methods)
+library(data.table)
+library(zoo)
+library(missForest)
+library(Metrics)
+library(foreign)
+library(glmnet)
+library(tidyverse)
+library(caret)
+
+```
+
+
+
+```{r}
+
+# read data
+databank=read.arff("~/Documents/Dersler/Fall-2018/IE-582/Homework4/5year.arff")
+dt_bank<-data.table(databank)
+# replace missing value with zero
+dt_bank[is.na(dt_bank)] <- 0
+
+#split data
+training.bank <- dt_bank$class %>% createDataPartition(p = 0.8, list = FALSE)
+trainbank<-dt_bank[training.bank,]
+testbank<-dt_bank[-training.bank]
+
+x_trainbank<- as.matrix(trainbank[,1:64])
+y_trainbank<- trainbank$class
+
+x_testbank<- as.matrix(testbank[,1:64])
+y_testbank<- testbank$class
+
+summarybank=data.table(algorithms=character(), AccuracyTrain=numeric(),AccuracyTest=numeric())
+
+```
+
+
+* Dataset1 PRA
+
+```{r error=FALSE,message=FALSE}
+
+
+modelprabank <- cv.glmnet(x_trainbank, y_trainbank, alpha = 1,nfolds=5,type.measure='class',family="binomial")
+
+prabanktrainaccuracy<-1-min(as.numeric(modelprabank$cvm))
+
+
+y_prabankpredicted<-predict(modelprabank,x_testbank,type = "class",s=modelprabank$lambda.min)
+
+banktable_confusionpra<-table(y_testbank,y_prabankpredicted)
+
+pranewstestaccuracy <- sum(diag(banktable_confusionpra)) / sum(banktable_confusionpra)
+
+#mean(y_predicted == y_test)
+
+summarybank<-rbind(summarybank,list("pra",prabanktrainaccuracy,pranewstestaccuracy))
+
+
+plot(modelprabank)
+
+
+```
+
+ Train accuracy is 0.935  and test accuray is 0.934  with 5-fold cross validation and tuned best lamda value (0.0001444236). There doesnt seem over or underfitting in model
+
+
+
+* Dataset1 Decision Tree
+
+
+
+```{r}
+
+dtresultsbank=data.table(minbucket=numeric(), Accuracy=numeric(), cp=numeric())
+
+#find best parameter
+for (minbucket in c(5,8,10,15))
+{
+
+dtbankGrid<-expand.grid(cp = c(0.05,0.01, 0.1, 0.15,0.20))
+control <- trainControl(method="cv", number=6, search="grid")
+innerdtreebank <- train(class ~ ., data=trainbank, method="rpart", metric="Accuracy",minbucket =minbucket, tuneLength=5, trControl=control,tuneGrid = dtbankGrid)
+
+resulttempbank<-innerdtreebank$results[,c("Accuracy","cp")]
+resulttempbank$minbucket<-minbucket
+dtresultsbank<-rbind(resulttempbank,dtresultsbank)
+}
+
+bestprdtbank<-dtresultsbank[,bestrnk:=rank(-Accuracy,ties.method= "min")][bestrnk==1]
+bestminbucketbank<-bestprdtbank[,c("minbucket")]
+bestcpbank<-bestprdtbank[,c("cp")]
+
+#print(dtresultsbank)
+
+#fit model best parameter
+dtbankGrid <-  expand.grid(cp =bestcpbank)
+control <- trainControl(method="cv", number=5, search="grid")
+dtreebank <- train(class ~ ., data=trainbank, method="rpart", metric="Accuracy",minbucket =bestminbucketbank, trControl=control,tuneGrid = dtbankGrid)
+
+#predict test data
+y_dtbankpredicted<-predict(dtreebank,x_testbank)
+banktable_confusiondt<-table(y_testbank,y_dtbankpredicted)
+
+dtreebanktestaccuracy <- sum(diag(banktable_confusiondt)) / sum(banktable_confusiondt)
+dtreebanktrainaccuracy<-as.numeric(bestprdtbank[,c("Accuracy")])
+
+summarybank<-rbind(summarybank,list("decisiontree",dtreebanktrainaccuracy,dtreebanktestaccuracy))
+
+print(as.matrix(dtresultsbank))
+
+```
+
+The best cv(6-fold) train accuracy is 0.9536844 and test accuracy 0.9543147. Similarly accuracies are so close each other
+
+
+
+
+* Dataset1 Random Forest
+
+
+```{r}
+
+
+# Grid search
+control <- trainControl(method="cv", number=6, search="grid")
+
+# nodesize(the minimal number of observations per tree leaf) is 5, number of tree 500,
+# 5  mtry value for tuning 
+
+rfbankgrid<-expand.grid(mtry = c(5,10, 20,30,35))
+rfbank <- train(class ~ ., data=trainbank, method="rf", metric="Accuracy",ntree =500,nodesize=5, trControl=control,tuneGrid = rfbankgrid)
+
+y_rfbankpredicted<-predict(rfbank,x_testbank)
+table_confusionbankrf<-table(y_testbank,y_rfbankpredicted)
+rfbanktestaccuracy <- sum(diag(table_confusionbankrf)) / sum(table_confusionbankrf)
+rfbanktrainaccuracy<-as.numeric(max(rfbank$results$Accuracy))
+
+summarybank<-rbind(summarybank,list("randomforest",rfbanktrainaccuracy,rfbanktestaccuracy))
+
+print(rfbank)
+plot(rfbank)
+
+
+```
+
+
+
+The best cv(6-fold) train accuracy is 0.9585459 and test accuracy 0.9551607. 
+
+
+
+
+* Dataset1 Gradient Boosting Trees
+
+
+```{r}
+
+
+control <- trainControl(method="cv", number=3, search="grid")
+
+gbmGridbank <-  expand.grid(interaction.depth = c(2, 5, 10), 
+                        n.trees = c(500, 1000, 1500),
+                        shrinkage = c(0.05,0.1, 0.2),
+                        n.minobsinnode = 10)
+
+gbmtrainbank <- train(class ~ ., data=trainbank, method="gbm", metric="Accuracy", trControl=control,tuneGrid = gbmGridbank)
+
+
+y_gbmbankpredicted<-predict(gbmtrainbank,x_testbank)
+table_confusiongbmbank<-table(y_testbank,y_gbmbankpredicted)
+gbmbanktestaccuracy <- sum(diag(table_confusiongbmbank)) / sum(table_confusiongbmbank)
+gbmbanktrainaccuracy<-max(gbmtrainbank$results$Accuracy)
+
+
+#gbmtrainbank$bestTune
+print(as.matrix(gbmtrainbank$results))
+plot(gbmtrainbank)
+
+summarybank<-rbind(summarybank,list("gbm",gbmbanktrainaccuracy,gbmbanktestaccuracy))
+
+```
+
+
+The best cv(3 fold) train accuracy is 0.9610854 and test accuracy 0.9610829. 
+
+
+* Dataset1 SVM
+
+
+```{r}
+
+resultsvmbank=data.table(degree=numeric(), Accuracy=numeric(), C=numeric())
+for (degree in c(1,2,3))
+{
+  
+control <- trainControl(method="cv", number=2, search="random")
+svmtrainbankinner <- train(class ~ ., data=trainbank, method="svmPoly", metric="Accuracy",degree=degree, tuneLength=5, trControl=control)
+svmtrainbankinner$results
+resulttempsvm<-svmtrainbankinner$results[,c("Accuracy","C")]
+resulttempsvm$degree<-degree
+resultsvmbank<-rbind(resultsvmbank,resulttempsvm)
+}
+
+
+bestprdtbanksvm<-resultsvmbank[,bestrnk:=rank(-Accuracy,ties.method= "min")][bestrnk==1]
+bestdegreebank<-bestprdtbanksvm[,c("degree")]
+bestcbank<-bestprdtbanksvm[,c("C")]
+
+#print(dtresultsbank)
+
+#fit model best parameter
+dtbankGrid <-  expand.grid(C =bestcbank)
+control <- trainControl(method="cv", number=2, search="grid")
+svmbank <- train(class ~ ., data=trainbank, method="svmPoly", metric="Accuracy",degree=bestdegreebank, trControl=control)
+#predict test data
+y_dtbankpredictedsvm<-predict(dtreebank,x_testbank)
+banktable_confusionsvm<-table(y_testbank,y_dtbankpredictedsvm)
+
+
+#evaluate
+svmbanktestaccuracy <- sum(diag(banktable_confusionsvm)) / sum(banktable_confusionsvm)
+svmbanktrainaccuracy<-as.numeric(bestprdtbanksvm[,c("Accuracy")])
+
+summarybank<-rbind(summarybank,list("svm",svmbanktrainaccuracy,svmbanktestaccuracy))
+
+print(as.matrix(resultsvmbank))
+
+
+
+```
+
+The best cv(3 fold) train accuracy is 0.9351 and test accuracy 0.9543147 
+
+
+
+```{r}
+print(as.matrix(summarybank))
+
+```
+
+
+ GBM algorithm provide best test and train accuracy. Because of cross validation , overfitting doesn't seen
+
+
+# Dataset 2
+
+This data set consists of three types of entities: (a) the specification of an auto in terms of various characteristics, (b) its assigned insurance risk rating, (c) its normalized losses in use as compared to other cars. The second rating corresponds to the degree to which the auto is more risky than its price indicates. Cars are initially assigned a risk factor symbol associated with its price. Then, if it is more risky (or less), this symbol is adjusted by moving it up (or down) the scale. Actuarians call this process "symboling". A value of +3 indicates that the auto is risky, -3 that it is probably pretty safe. 
+205 instance, 26 features
+
+```{r message=FALSE, error=FALSE}
+
+summaryauto=data.table(algorithms=character(), AccuracyTrain=numeric(),AccuracyTest=numeric())
+
+
+dataauto=read.table("~/Documents/Dersler/Fall-2018/IE-582/Homework4/imports-85.data.txt",header = TRUE, sep = ",")
+dt_auto<-data.table(dataauto)
+
+
+# replace missing value with prediction of missForest
+
+dt_auto[dt_auto=='?']<-NA
+dt_auto[,2]<-NULL
+autopart1<-dt_auto[,1:20]
+autopart2<-dt_auto[,21:25]
+impute<-missForest(autopart1)
+
+autopart1<-impute$ximp
+
+dt_auto<-cbind(autopart1,autopart2)
+
+dt_auto$horsepower<-ifelse(is.na(dt_auto$horsepower),is.numeric(mean(dt_auto$horsepower,na.rm=TRUE)),dt_auto$horsepower)
+dt_auto$peak.rpm<-ifelse(is.na(dt_auto$peak.rpm),is.numeric(mean(dt_auto$peak.rpm,na.rm=TRUE)),dt_auto$peak.rpm)  
+dt_auto$price<-ifelse(is.na(dt_auto$price),is.numeric(mean(dt_auto$price,na.rm=TRUE)),dt_auto$price)
+
+# Because -2 category is only two instance , group by -1
+dt_auto$symboling<-ifelse(dt_auto$symboling==-2,-1,dt_auto$symboling) 
+
+#split train and test
+
+dt_auto[bore=="3,34"]<-NULL
+training.auto <- dt_auto$symboling %>% createDataPartition(p = 0.8, list = FALSE)
+trainauto<-dt_auto[training.auto,]
+testauto<-dt_auto[-training.auto]
+
+
+x_trainauto<- as.matrix(trainauto[,2:25])
+y_trainauto<- trainauto$symboling
+
+x_testauto<- testauto[,2:25]
+y_testauto<- testauto$symboling
+
+
+```
+
+
+* Dataset 2 PRA model
+
+
+```{r}
+# create dummies for categorical variable
+#summary(dt_auto)
+x_trainautoct<-trainauto[,c("symboling","make","fuel.type","aspiration","num.of.doors","body.style","drive.wheels","engine.location","engine.type","num.of.cylinders","fuel.system")]
+x_trainautocon<-trainauto[,c("wheel.base","length","width","height","curb.weight","engine.size","bore","stroke","compression.ratio","horsepower","peak.rpm","city.mpg","highway.mpg","price")]
+
+dummies<-dummyVars(symboling ~ .,data=data.table(x_trainautoct))
+x_trainautoct<-data.table(predict(dummies,newdata=x_trainautoct))
+x_trainrpaauto<-as.matrix(cbind(x_trainautoct,x_trainautocon))
+
+#for test data
+x_testautoct<-testauto[,c("symboling","make","fuel.type","aspiration","num.of.doors","body.style","drive.wheels","engine.location","engine.type","num.of.cylinders","fuel.system")]
+x_testautocon<-testauto[,c("wheel.base","length","width","height","curb.weight","engine.size","bore","stroke","compression.ratio","horsepower","peak.rpm","city.mpg","highway.mpg","price")] 
+
+
+dummiestest<-dummyVars(symboling ~ .,data=data.table(x_testautoct))
+x_testautoct<-data.table(predict(dummiestest,newdata=x_testautoct))
+x_testrpaauto<-as.matrix(cbind(x_testautoct,x_testautocon))
+
+
+
+
+# model fit
+
+
+modelrpaauto <- cv.glmnet(as(x_trainrpaauto,"dgCMatrix"),as.factor(y_trainauto), alpha =1,nfolds=6,type.measure='class',family="multinomial")
+
+
+rpaautotrainaccuracy<-1-min(as.numeric(modelrpaauto$cvm))
+
+
+y_praautopredicted<-predict(modelrpaauto,as(x_testrpaauto,"dgCMatrix"),type = "class",s=modelrpaauto$lambda.min)
+
+autotable_confusionrpa<-table(y_testauto,y_praautopredicted)
+
+praautotestaccuracy <- sum(diag(autotable_confusionrpa)) / sum(autotable_confusionrpa)
+
+
+summaryauto<-rbind(summaryauto,list("pra",rpaautotrainaccuracy,praautotestaccuracy))
+
+plot(modelrpaauto)
+
+
+```
+
+
+Cross Validated train accuracy is 0.6987952 and test accuracy is 0.6923077.
+
+* Dataset2 Decision Tree
+
+
+```{r}
+
+dtresultsauto=data.table(minbucket=numeric(), Accuracy=numeric(), cp=numeric())
+
+#find best parameter
+for (minbucket in c(5,10,15,20,25))
+{
+
+dtautoGrid<-expand.grid(cp = c(0.05,0.01, 0.1, 0.005,0.001))
+control <- trainControl(method="cv", number=10, search="grid")
+innerdtreeauto <- train(as.factor(symboling) ~ ., data=as.matrix(trainauto), method="rpart", metric="Accuracy",minbucket =minbucket, tuneLength=6, trControl=control,tuneGrid = dtautoGrid)
+
+resulttempauto<-innerdtreeauto$results[,c("Accuracy","cp")]
+resulttempauto$minbucket<-minbucket
+dtresultsauto<-rbind(resulttempauto,dtresultsauto)
+}
+
+bestprdtauto<-dtresultsauto[,bestrnk:=rank(-Accuracy,ties.method= "min")][bestrnk==1]
+bestminbucketauto<-bestprdtauto[,c("minbucket")]
+bestcpauto<-bestprdtauto[,c("cp")]
+
+
+#fit model best parameter
+dtautoGrid <-  expand.grid(cp =bestcpauto)
+control <- trainControl(method="cv", number=8, search="grid")
+dtreeauto <- train(as.factor(symboling) ~ ., data=data.table(trainauto), method="rpart", metric="Accuracy",minbucket =bestminbucketauto, trControl=control,tuneGrid = dtautoGrid)
+
+
+x_testauto[engine.type=="dohcv"]<-NULL
+x_testauto[num.of.cylinders=='twelve']<-NULL
+
+
+y_dtautopredicted<-predict(dtreeauto,data.table(x_testauto))
+
+autotable_confusiondt<-table(y_testauto,y_dtautopredicted)
+dtreeautotestaccuracy <- sum(diag(autotable_confusiondt)) / sum(autotable_confusiondt)
+dtreeautotrainaccuracy<-as.numeric(bestprdtauto[1,c("Accuracy")])
+
+print(as.matrix(dtresultsauto))
+
+summaryauto<-rbind(summaryauto,list("dtree",dtreeautotrainaccuracy,dtreeautotestaccuracy))
+
+
+
+
+```
+
+  Train accuracy is 0.6507761 and test accuracy is 0.6153846, model is overfitting. Best parameters are minbucket=20,cp=0.01,
+
+
+* Dataset2 Random Forest
+
+
+
+```{r}
+
+# Grid search
+control <- trainControl(method="cv", number=6, search="grid")
+
+# nodesize(the minimal number of observations per tree leaf) is 5, number of tree 500,
+# 6  mtry value for tuning 
+
+rfautogrid<-expand.grid(mtry = c(5,10,15, 20,30,40))
+rfauto <- train(as.factor(symboling) ~ ., data=data.table(trainauto), method="rf", metric="Accuracy",ntree =500,nodesize=5, trControl=control,tuneGrid = rfautogrid)
+
+y_rfautopredicted<-predict(rfauto,data.table(x_testauto))
+table_confusionautorf<-table(y_testauto,y_rfautopredicted)
+rfautotestaccuracy <- sum(diag(table_confusionautorf)) / sum(table_confusionautorf)
+rfautotrainaccuracy<-as.numeric(max(rfauto$results$Accuracy))
+
+
+summaryauto<-rbind(summaryauto,list("randomforest",rfautotrainaccuracy,rfautotestaccuracy))
+print(rfauto)
+plot(rfauto)
+
+
+
+```
+
+
+ The best cv train accuracy 0.7788637 and test accuracy is 0.7435897. Best tuned mtry=40
+
+* Dataset 2 GBM
+
+```{r, error=FALSE, message=FALSE}
+
+control <- trainControl(method="cv", number=6, search="grid")
+
+gbmGridauto <-  expand.grid(interaction.depth = c(2, 5, 10), 
+                        n.trees = c(500, 1000, 1500),
+                        shrinkage = c(0.05,0.1, 0.2),
+                        n.minobsinnode = 10)
+
+gbmtrainauto <- train(as.factor(symboling) ~ ., data=data.table(trainauto), method="gbm", metric="Accuracy", trControl=control,tuneGrid = gbmGridauto)
+
+
+y_gbmautopredicted<-predict(gbmtrainauto,data.table(x_testauto))
+table_confusiongbmauto<-table(y_testauto,y_gbmautopredicted)
+gbmautotestaccuracy <- sum(diag(table_confusiongbmauto)) / sum(table_confusiongbmauto)
+gbmautotrainaccuracy<-max(gbmtrainauto$results$Accuracy)
+
+summaryauto<-rbind(summaryauto,list("gbm",gbmautotrainaccuracy,gbmautotestaccuracy))
+
+
+
+print(as.matrix(gbmtrainauto$results))
+plot(gbmtrainauto)
+
+```
+
+The best cv train accuracy 0.7982669 and test accuracy is 0.6923077, model overfits.Parameters are listed, best parameter are interaction.depth=2,n.trees=500
+shrinkage=0.05
+
+* Dataset 2 SVM
+
+
+
+```{r, eval=FALSE}
+
+
+resultsvmauto=data.table( Accuracy=numeric(), cp=numeric())
+for (degree in c(2,3))
+{
+  
+control <- trainControl(method="cv", number=2, search="random")
+svmtrainautoinner <- train(as.matrix(x_trainrpaauto),as.factor(y_trainauto) , method="svmPoly", metric="Accuracy", tuneLength=6, trControl=control,preProcess = c("center","scale"))
+
+svmtrainautoinner$results
+resulttempsvm<-dt_news$results[,c("Accuracy","cp")]
+resulttempsvm$minbucket<-degree
+resultsvm<-rbind(resulttemp,results)
+}
+
+
+
+```
+
+SVM didnt work and always endup with error (Error in x[lowerl:n, ] %*% t(y)), I searched reason of error. I think so many one-hot encoding features cause error
+
+
+```{r}
+
+
+print(as.matrix(summaryauto))
+
+
+```
+
+
+GBM gives best train accuracy but it is overfitting in test data. Random forest has best accuracy in test data.
+
+
+
+# Dataset 3
+
+ ?? used Online News Popularity Data Set (http://archive.ics.uci.edu/ml/datasets/Online+News+Popularity#).
+ This dataset summarizes a heterogeneous set of features about articles published by Mashable in a period of two years. The goal is to predict the number of shares in social networks (popularity).It has 39000 instance and 61 features including one hot encoding categorical variable. I grouped number of shares into 2 category (popular,unpopular) to turn into classification problem
+ 
+```{r setup, }
+#data import
+
+
+library(data.table)
+
+dt_news<-read.csv("~/Documents/Dersler/Fall-2018/IE-582/Homework4/OnlineNewsPopularity/OnlineNewsPopularity.csv",header = TRUE, sep = ",")
+
+#sum(is.na(dt_ottotrain))
+
+# seperate number of share in 2 category according to median (1450)
+dt_news<-data.table(dt_news)
+summary(dt_news)
+#dt_news[,`:=`(Popularity = ifelse(shares<1000,'low',ifelse(shares>3000,'high','medium')))]
+dt_news[,`:=`(Popularity = ifelse(shares<1400,'unpopular','popular'))]
+
+# remove column
+dt_news<-dt_news[,-c(1,2,61)]
+
+
+
+```
+
+
+* Dataset 3 PRA
+
+
+```{r cars}
+
+
+# Split test and train data
+training.samples <- dt_news$Popularity %>% createDataPartition(p = 0.8, list = FALSE)
+trainnews<-dt_news[training.samples,]
+testnews<-dt_news[-training.samples]
+
+x_trainnews<- as.matrix(trainnews[,1:58])
+y_trainnews<- ifelse(trainnews$Popularity=="unpopular",0,1)
+
+
+
+summarynews=data.table(algorithms=character(), AccuracyTrain=numeric(),AccuracyTest=numeric())
+
+```
+
+
+
+
+
+```{r}
+
+#cross validation for min lambda, model find optimal lambda between random candidate
+# fit the model on training data 
+
+modelrpanews <- cv.glmnet(x_trainnews, y_trainnews, alpha = 1,nfolds=10,type.measure='class',family="binomial")
+rpanewstrainaccuracy<-1-min(as.numeric(modelrpanews$cvm))
+
+x_testnews<- as.matrix(testnews[,1:58])
+y_testnews<- ifelse(testnews$Popularity=="unpopular",0,1)
+
+
+y_pranewspredicted<-predict(modelrpanews,x_testnews,type = "class",s=modelrpanews$lambda.min)
+
+table_confusionrpa<-table(y_testnews,y_pranewspredicted)
+
+pranewstestaccuracy <- sum(diag(table_confusionrpa)) / sum(table_confusionrpa)
+
+
+summarynews<-rbind(summarynews,list("pra",rpanewstrainaccuracy,pranewstestaccuracy))
+
+plot(modelrpanews)
+
+
+```
+
+
+The best cv train accuracy is 0.653235 with best lamda (0.0003) and test accuracy is 0.6541372. 
+
+
+* Dataset1 Decision Tree
+
+
+
+```{r pressure, echo=FALSE}
+library(rpart)
+
+
+dtresultsnews=data.table(minbucket=numeric(), Accuracy=numeric(), cp=numeric())
+for (minbucket in c(5,8,10,15))
+{
+
+dtnewsGrid<-expand.grid(cp = c(0.05,0.01, 0.1, 0.15,0.20))
+control <- trainControl(method="cv", number=5, search="grid")
+innerdtreenews <- train(Popularity ~ ., data=trainnews, method="rpart", metric="Accuracy",minbucket =minbucket, tuneLength=5, trControl=control,tuneGrid = dtnewsGrid)
+
+resulttemp<-innerdtreenews$results[,c("Accuracy","cp")]
+resulttemp$minbucket<-minbucket
+dtresultsnews<-rbind(resulttemp,dtresultsnews)
+}
+
+bestprdt<-dtresultsnews[,bestrnk:=rank(-Accuracy,ties.method= "min")][bestrnk==1]
+bestminbucket<-bestprdt[,c("minbucket")]
+bestcp<-bestprdt[,c("cp")]
+
+
+dtnewsGrid <-  expand.grid(cp =bestcp)
+control <- trainControl(method="cv", number=5, search="grid")
+dtreenews <- train(Popularity ~ ., data=trainnews, method="rpart", metric="Accuracy",minbucket =bestminbucket, trControl=control,tuneGrid = dtnewsGrid)
+
+
+y_dtnewspredicted<-predict(dtreenews,x_testnews)
+y_dtnewspredicted<-ifelse(y_dtnewspredicted=="unpopular",0,1)
+table_confusiondt<-table(y_testnews,y_dtnewspredicted)
+dtreenewstestaccuracy <- sum(diag(table_confusiondt)) / sum(table_confusiondt)
+dttrainnewsaccuracy<-as.numeric(bestprdt[,c("Accuracy")])
+
+
+print(as.matrix(dtresultsnews))
+
+summarynews<-rbind(summarynews,list("dtree",dttrainnewsaccuracy,dtreenewstestaccuracy))
+
+```
+
+The best train accuracy is 0.637470 and test accuracy is 0.6347124. Parameters are listed, best parameter are minbucket=10,cp=0.01
+
+* Dataset1 Random Forest
+
+
+
+```{r}
+
+# Grid Tuning
+control <- trainControl(method="cv", number=2, search="grid")
+
+# nodesize(the minimal number of observations per tree leaf) is 5, number of tree 500,
+#tunelength gives 6 random mtry value for tuning 
+
+rfnewsgrid<-expand.grid(mtry = c(5,10, 15,30))
+rfnews <- train(Popularity ~ ., data=trainnews, method="rf", metric="Accuracy",ntree =500,nodesize=5, trControl=control,tuneGrid = rfnewsgrid)
+
+y_rfnewspredicted<-predict(rfnews,x_testnews)
+y_rfnewspredicted<-ifelse(y_rfnewspredicted=="unpopular",0,1)
+table_confusiondt<-table(y_testnews,y_rfnewspredicted)
+rfnewstestaccuracy <- as.numeric(sum(diag(table_confusiondt)) / sum(table_confusiondt))
+rfnewstrainaccuracy<-as.numeric(max(rfnews$results$Accuracy))
+
+summarynews<-rbind(summarynews,list("randomforest",rfnewstrainaccuracy,rfnewstestaccuracy))
+
+print(rfnews)
+plot(rfnews)
+
+```
+
+
+The best cv train accuracy is 0.6677387 and test accuracy is 0.6693996 ,best mtry is 5
+
+
+
+* Dataset1 Gradient Boosting Trees
+
+
+
+```{r }
+
+control <- trainControl(method="cv", number=2, search="grid")
+
+gbmGrid <-  expand.grid(interaction.depth = c(2, 5, 9), 
+                        n.trees = c(500, 1000, 1500),
+                        shrinkage = c(0.05,0.1, 0.2),
+                        n.minobsinnode = 10)
+
+gbmtrainnews <- train(Popularity ~ ., data=trainnews, method="gbm", metric="Accuracy", trControl=control,tuneGrid = gbmGrid)
+
+
+y_gbmnewspredicted<-predict(gbmtrainnews,x_testnews)
+y_gbmnewspredicted<-ifelse(y_gbmnewspredicted=="unpopular",0,1)
+table_confusiongbm<-table(y_testnews,y_gbmnewspredicted)
+gbmnewstestaccuracy <- sum(diag(table_confusiongbm)) / sum(table_confusiongbm)
+gbmnewstrainaccuracy<-max(gbmtrainnews$results$Accuracy)
+
+summarynews<-rbind(summarynews,list("GBM",gbmnewstrainaccuracy,gbmnewstestaccuracy))
+
+
+print(as.matrix(gbmtrainnews$results))
+plot(gbmtrainnews)
+
+
+```
+
+
+The best train accuracy is 0.6717745 and test accuracy is 0.6632190 Parameter is listed, best parameter are interaction.depth=10,n.trees=500,shrinkage=0.05
+
+* Dataset1 SVM
+
+
+```{r , eval=FALSE}
+#Because of long run time, ?? took sample
+
+trainsvm <- trainnews$Popularity %>% createDataPartition(p = 0.6, list = FALSE)
+trainsvm<-trainnews[trainsvm,]
+x_trainnews<- as.matrix(trainsvm[,1:58])
+y_trainnews<- ifelse(trainsvm$Popularity=="unpopular",0,1)
+
+
+resultsvm=data.table(minbucket=numeric(), Accuracy=numeric(), cp=numeric())
+for (degree in c(2,3,4))
+{
+  
+control <- trainControl(method="cv", number=2, search="random")
+svmtrainnewsinner <- train(Popularity ~ ., data=trainnews, method="svmPoly", metric="Accuracy",degree=2, tuneLength=3, trControl=control)
+resulttempsvm<-dt_news$results[,c("Accuracy","cp")]
+resulttempsvm$minbucket<-degree
+resultsvm<-rbind(resulttemp,results)
+}
+
+
+
+
+
+```
+
+
+SVM take so much time (over 2 hour), so ?? only write code(it was accepted in class)
+
+
+```{r}
+
+print(summarynews)
+
+```
+
+GBM provide best train accuracy,while Random forest model has highest test accuracy. PRA accuracy is lower than other models.
+
+
+## Dataset 4 (Regression)
+
+The dataset is about Communities and Crime analysis in USA. It include 2215 instance and 147 feature. Some categorical feature excluded to reduce dimension. The aim is predict per capita violent crimes variable was calculated using population and the sum of crime variables considered violent crimes in the United States: murder, rape, robbery, and assault.
+
+
+```{r}
+
+datacrime=read.table("~/Documents/Dersler/Fall-2018/IE-582/Homework4/communities.data.txt",header = FALSE, sep = ",")
+dt_crime<-data.table(datacrime)
+dt_crime[dt_crime=='?']<-NA
+
+
+#if %80 of value is missing, exclude features
+dt_crime<-dt_crime[,-c(1:6,102:118,122:125,127)]
+dt_crime<-na.omit(dt_crime)
+
+training.crime <- dt_crime$V128 %>% createDataPartition(p = 0.8, list = FALSE)
+traincrime<-dt_crime[training.crime,]
+testcrime<-dt_crime[-training.crime]
+
+x_traincrime<- as.matrix(traincrime[,1:99])
+y_traincrime<- traincrime$V128
+
+
+x_testcrime<- as.matrix(testcrime[,1:99])
+y_testcrime<- testcrime$V128
+
+summarycrime=data.table(algorithms=character(), RMSETrain=numeric(),RMSETest=numeric())
+
+```
+
+
+# Dataset 4 PRA
+
+* Model
+```{r}
+
+modelpracrime <- cv.glmnet(as(x_traincrime,"dgCMatrix"), y_traincrime, alpha = 1,nfolds=10,type.measure='mse',lambda = c(0.005,0.001,0.01,0.05,0.1,0.2,0.5))
+
+# model found best lambda for min mse but ?? transform train metric into rmse to evaluate other methods(best mse probably is equal to the best rmse) 
+y_pracrimepretrain<-predict(modelpracrime,as(x_traincrime,"dgCMatrix"),s=modelpracrime$lambda.min)
+y_pracrimepredicted<-predict(modelpracrime,as(x_testcrime,"dgCMatrix"),s=modelpracrime$lambda.min)
+
+
+
+pracrimetrainmse<-rmse(y_traincrime,y_pracrimepretrain) ## trainmse  0.19
+pracrimetestmse<-rmse(y_testcrime,y_pracrimepredicted) ## test mse 0.15
+
+plot(modelpracrime)
+
+summarycrime<-rbind(summarycrime,list("pra",pracrimetrainmse,pracrimetestmse))
+
+
+
+
+```
+
+
+The cv best rmse is 0.1336339  and test rmse is 0.126521, best lambda=0.001 
+
+* Dataset 4 Decision Tree
+
+* Model
+
+```{r, error=FALSE, message=FALSE}
+
+dtresultscrime=data.table(minbucket=numeric(), RMSE=numeric(), cp=numeric())
+
+#find best parameter
+for (minbucket in c(5,8,10,15,20))
+{
+
+dtcrimeGrid<-expand.grid(cp = c(0.005,0.05,0.01, 0.1, 0.15))
+control <- trainControl(method="cv", number=6, search="grid")
+innerdtreecrime <- train(V128 ~ ., data=traincrime, method="rpart", metric="RMSE",minbucket =minbucket, tuneLength=5, trControl=control,tuneGrid = dtcrimeGrid)
+
+resulttempcrime<-innerdtreecrime$results[,c("RMSE","cp")]
+resulttempcrime$minbucket<-minbucket
+dtresultscrime<-rbind(resulttempcrime,dtresultscrime)
+}
+
+bestprdtcrime<-dtresultscrime[,bestrnk:=rank(RMSE,ties.method= "min")][bestrnk==1]
+bestminbucketcrime<-bestprdtcrime[,c("minbucket")]
+bestcpcrime<-bestprdtcrime[,c("cp")]
+
+
+print(as.matrix(dtresultscrime))
+
+
+
+
+```
+
+
+
+* Evaluation
+
+
+
+```{r}
+#fit model best parameter
+
+dtcrimeGrid <-  expand.grid(cp =bestcpcrime)
+control <- trainControl(method="cv", number=3, search="grid")
+dtreecrime <- train(V128 ~ ., data=traincrime, method="rpart", metric="RMSE",minbucket =bestminbucketcrime, trControl=control,tuneGrid = dtcrimeGrid)
+#dtreecrime <- train(x_traincrime,y_traincrime, method="rpart", minbucket =bestminbucketcrime, trControl=control,tuneGrid = dtcrimeGrid)
+
+
+
+y_dtcrimepredicted<-predict(dtreecrime,testcrime[,1:99])
+#y_dtcrimepredicted<-ifelse(y_dtnewspredicted=="unpopular",0,1)
+dtreecrimetestaccuracy <- rmse(y_testcrime,y_dtcrimepredicted)
+dtreecrimetrainaccuracy<-as.numeric(bestprdtcrime[1,c("RMSE")])
+
+
+summarycrime<-rbind(summarycrime,list("dtree",dtreecrimetrainaccuracy,dtreecrimetestaccuracy))
+
+print(as.matrix(dtresultscrime))
+
+
+
+```
+
+
+The best cv train accuracy is 0.1577819 and test accuracy is 0.1389348 Parameter is listed, best parameter are minbucket=15,cp=0.01
+
+
+* Dataset 4 Random Forest
+
+
+```{r}
+
+# Grid search
+control <- trainControl(method="cv", number=6, search="grid")
+
+# nodesize(the minimal number of observations per tree leaf) is 5, number of tree 500,
+# 6  mtry value for tuning 
+
+rfcrimegrid<-expand.grid(mtry = c(5,10, 20,30,40))
+rfcrime <- train(V128 ~ ., data=traincrime, method="rf", metric="RMSE",ntree =500,nodesize=5, trControl=control,tuneGrid = rfcrimegrid)
+
+y_rfcrimepredicted<-predict(rfcrime,testcrime[,1:99])
+rfcrimetestaccuracy <- rmse(y_testcrime,y_dtcrimepredicted)
+rfcrimetrainaccuracy<-as.numeric(min(rfcrime$results$RMSE))
+
+summarycrime<-rbind(summarycrime,list("randomforest",rfcrimetrainaccuracy,rfcrimetestaccuracy))
+
+print(rfcrime)
+plot(rfcrime)
+
+
+```
+
+
+The best cv train RMSE is 0.1372404 and test RMSE is 0.1389348 ,  mtry=40
+
+
+* Dataset 4 GBM
+ 
+```{r, error=FALSE, message=FALSE}
+
+control <- trainControl(method="cv", number=3, search="grid")
+
+gbmGridcrime <-  expand.grid(interaction.depth = c(2, 5, 10), 
+                        n.trees = c(500, 1000, 1500),
+                        shrinkage = c(0.05,0.1, 0.2),
+                        n.minobsinnode = 10)
+
+gbmtraincrime <- train(V128 ~ ., data=traincrime, method="gbm", metric="RMSE", trControl=control,tuneGrid = gbmGridcrime)
+
+
+y_gbmcrimepredicted<-predict(gbmtraincrime,testcrime[,1:99])
+gbmcrimetestrmse <- rmse(y_testcrime,y_gbmcrimepredicted)
+gbmcrimetrainrmse<-min(gbmtraincrime$results$RMSE)
+
+
+summarycrime<-rbind(summarycrime,list("gbm",gbmcrimetrainrmse,gbmcrimetestrmse))  
+
+print(as.matrix(gbmtraincrime$results))
+plot(gbmtraincrime)
+
+#gbmtrainbank$bestTune
+```
+
+
+The best cv train RMSE is 0.1392975 and test RMSE is 0.1246583 Parameter is listed, best parameter are interaction.depth=10,n.trees=0.01,shrinkage=
+
+
+* Dataset 4 SVM
+
+
+```{r, eval=FALSE}
+
+
+resultsvmcrime=data.table(minbucket=numeric(), Accuracy=numeric(), cp=numeric())
+for (degree in c(1,2,3))
+{
+SVMgrid <- expand.grid(sigma = c(0.0577), C = c(2.21049))  
+control <- trainControl(method="cv", number=2, search="random")
+svmtraincrimeinner <- train(V128 ~ ., data=as.matrix(traincrime), method="svmPoly",degree=degree, tuneLength=3, trControl=control,preProcess = c("center","scale"))
+
+#svmtraincrimeinner <- train(V128 ~ ., data=as.matrix(traincrime), method="svmRadial",tuneGrid = SVMgrid,preProcess = c("center","scale"))
+
+svmtraincrimeinner$results
+resulttempsvm<-dt_news$results[,c("Accuracy","cp")]
+resulttempsvm$minbucket<-degree
+resultsvm<-rbind(resulttemp,results)
+
+}
+
+
+```
+
+SVM take so much time (over 2 hour), so ?? only write code(it was accepted in class)
+
+* Dataset 4 Summary
+
+```{r}
+
+print(summarycrime)
+
+```
+
+PRA models give best train and test RMSE, GBM model is overfitting in train data.
+
+
+
+* General Summary
+ 
+ GBM and Random forest models generally gives better result than others except regression, but GBM models may overfit. Tuning parameter has high importance in accuracy, it can effect accuracy dramatically even in small change.  
+ 
+ 
+
+
