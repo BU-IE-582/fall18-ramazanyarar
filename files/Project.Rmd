@@ -114,7 +114,7 @@ dt_dataset<-unique(dt_dataset)
 
 #dt_season12<-dt_dataset[date>="2017-08-01" ] 2018-12-04
 # burada son hafta ile bu sezonu s??n??rlad??m, birde isim de??i??ikl??i olan ba??ka tak??mlarda var
-dt_season1<-dt_dataset[date>="2018-08-01"& date<="2018-12-19"][bookmaker=="Pinnacle"]
+dt_season1<-dt_dataset[date>="2018-08-01"& date<="2018-12-24"][bookmaker=="Pinnacle"]
 dt_season2<-dt_dataset[date>="2017-08-01" & date<="2018-06-07"][bookmaker=="Pinnacle"]
 dt_season3<-dt_dataset[date>="2016-08-01" & date<="2017-06-07"][bookmaker=="Pinnacle"]
 dt_season4<-dt_dataset[date>="2015-08-01" & date<="2016-06-07"][bookmaker=="Pinnacle"]
@@ -254,7 +254,7 @@ plot(season1_performance$difference,season1_performance$rps,type = "l")
 
 
 
-```{r}
+```{r, error=False,message=FALSE}
 
 #feature selection
 
@@ -292,7 +292,7 @@ oldrps<-RPS_matrix(dt_fixture[,.(homeprob,drawprob,awayprob)],dt_fixture[,.(Resu
   
 dt_fixture$rps<-data.frame(oldrps)
 
-fixture[,`:=`(WinProbratio = ifelse(Status == 0, homeprob/awayprob,awayprob/homeprob))]
+dt_fixture<-dt_fixture[,`:=`(WinProbratio = ifelse(Status == 0, homeprob/awayprob,awayprob/homeprob))]
 
 
 return(dt_fixture)
@@ -317,6 +317,10 @@ feature_extract = function(data){
   data[,homeOldRps:=0]
   data[,awayOldRps:=0]
   data[,week:=0]
+  data[,homeWinRatioInHome:=0]
+  data[,awayWinRatioInAway:=0]
+  data[,homeL5rps:=0]
+  data[,awayL5rps:=0]
   #data[,GradeDifference:=0]
   
   
@@ -325,8 +329,12 @@ feature_extract = function(data){
     matchid=data[i,c("matchId")]
     homeTeam=data[i,c("home")]
     awayTeam=data[i,c("away")]
+    Iscurrentwk=is.na(data[i,c("MatchResult")])
+  
     
     
+    
+      
     hwk=as.numeric(fixture[matchId==matchid &Status==0][,c("HAWeek")])
     homeGrade=fixture[matchId==matchid & Team==homeTeam&Status==0][,c("TotalGrade")]
     hwkp=as.numeric(ifelse(hwk>2,hwk-2,hwk))
@@ -405,6 +413,11 @@ feature_extract = function(data){
     data[i,c("awayL3CGoal")]=awayL3CGoal
     
     
+    
+    #wk
+    wk=as.numeric(max(fixture[matchId==matchid &Status==0][,c("week")]))
+    wk=ifelse(Iscurrentwk,wk-1,wk)
+    wkp5=as.numeric(ifelse(wk>5,wk-5,1))
     #rps
     
     dt_homeOldRps=fixture[ Team==homeTeam][1:hwk,c("rps")]
@@ -412,18 +425,53 @@ feature_extract = function(data){
     homeOldRps=median(as.numeric(dt_homeOldRps$rps))
     
     
-    dt_awayOldRps=fixture[ Team==awayTeam][1:hwk,c("rps")]
-    awayOldRps=median(as.numeric(dt_awayOldRps$rps))
+    dt_home5OldRps=fixture[ Team==homeTeam][wkp5:wk,c("rps")]
+    #dt_homeOldRps=fixture[ Team=="bournemouth"][1:5,c("rps")]
+    home5OldRps=median(as.numeric(dt_home5OldRps$rps))
     
+    
+    
+    dt_away5OldRps=fixture[ Team==awayTeam][wkp5:wk,c("rps")]
+    away5OldRps=mean(as.numeric(dt_away5OldRps$rps))
+    
+    
+    dt_awayOldRps=fixture[ Team==awayTeam][1:awk,c("rps")]
+    #dt_homeOldRps=fixture[ Team=="bournemouth"][1:5,c("rps")]
+    awayOldRps=mean(as.numeric(dt_awayOldRps$rps))
      
     data[i,c("homeOldRps")]=homeOldRps
     data[i,c("awayOldRps")]=awayOldRps
     
+    
+    data[i,c("homeL5rps")]=home5OldRps
+    data[i,c("awayL5rps")]=away5OldRps
+    
+    
   #week
     week=as.numeric(max(fixture[matchId==matchid][,c("week")]))
     data[i,c("week")]=week
+    
+    
+  #WinRatio
+  homeWinRatioInHome<-median(fixture[Team==homeTeam&Status==0]$WinProbratio,na.rm = TRUE)
+  awayWinRatioInAway<-median(fixture[Team==awayTeam&Status==1]$WinProbratio,na.rm = TRUE)
+  
+  
+  #homeWinRatioInHome<-as.numeric(median(fixture[Team=="bournemouth"&Status==1]$WinProbratio)) 
+  
+  
+  data[i,c("homeWinRatioInHome")]<-homeWinRatioInHome
+  data[i,c("awayWinRatioInAway")]<-awayWinRatioInAway  
+    
+  
+
      
   }
+  
+    #special case
+  
+  data<-data[,`:=`(Is.special = ifelse(((homeWinRatioInHome>awayWinRatioInAway & homeprob<awayprob) | (homeWinRatioInHome<awayWinRatioInAway & homeprob>awayprob)),1,0),
+                   Is.normal = ifelse(((homeWinRatioInHome>awayWinRatioInAway & homeprob<awayprob) | (homeWinRatioInHome<awayWinRatioInAway & homeprob>awayprob)),0,1))]
   return(data)
 }
 
@@ -434,7 +482,10 @@ feature_extract = function(data){
 fixture<-fixture_create(dt_season1)
 model_data_sz1<-feature_extract(dt_season1)
 
-#2. s??ra
+###fixture<-fixture[,`:=`(WinProbratio = ifelse(Status == 0, homeprob/awayprob,awayprob/homeprob))]
+
+
+#season2
 fixture<-fixture_create(dt_season2)
 model_data_sz2<-feature_extract(dt_season2)
 
@@ -452,14 +503,19 @@ model_data_sz4<-feature_extract(dt_season4)
 fixture<-fixture_create(dt_season5)
 model_data_sz5<-feature_extract(dt_season5)
 
+
+# model_data_sz1<-model_data_sz1[,`:=`(Is.special2 = ifelse(((homeWinRatioInHome>awayWinRatioInAway & homeprob<awayprob) | (homeWinRatioInHome<awayWinRatioInAway & homeprob>awayprob)), 1,0))]
+
 #unique(model_data_sz5$home)
 
 
 model_data<-rbind(model_data_sz1,model_data_sz2,model_data_sz3,model_data_sz4,model_data_sz5)
-model_data<-model_data[week<30]
+#model_data<-model_data[week<30]
 
-model_data<-model_data[,c("matchId","leagueId","odd1","date","MatchResult","homeprob","drawprob","AwayTotalGrade","HomeTotalGrade","homeOldRps","awayOldRps")]
-                          
+
+model_data<-model_data[,c("matchId","leagueId","odd1","date","MatchResult","homeprob","awayprob","drawprob","AwayTotalGrade","HomeTotalGrade","homeL5rps","awayL5rps","Is.special")]
+
+#model_data<-model_data[,c("matchId","leagueId","odd1","date","MatchResult","homeprob","drawprob","homeOldRps","awayOldRps","homeWinRatioInHome","awayWinRatioInAway","AwayTotalGrade","HomeTotalGrade","Is.special")]
                           #"homeL3wincount","homeL3defeatcount","awayL3wincount","awayL3defeatcount")]
                           #"homeOldRps","awayOldRps","homeL3wincount","awayL3wincount")]
                          # ,"homeL3wincount","homeL3defeatcount","awayL3wincount","awayL3defeatcount")]
@@ -468,10 +524,10 @@ model_data<-model_data[,c("matchId","leagueId","odd1","date","MatchResult","home
       #                    ,"homeL3wincount","homeL3defeatcount","awayL3wincount","awayL3defeatcount")]
 
 
-train.data<- model_data[date<"2018-12-15"] # 70% data goes in here 2018-12-03
-test.data<- model_data[date>="2018-12-15"]
+train.data<- model_data[date<"2018-12-25"] # 70% data goes in here 2018-12-03
+test.data<- model_data[date>"2018-12-18"]  ## & date<"2018-12-25"]
 
-#cor(model_data[,6:16])
+#cor(model_data[,6:14])
 
 ```
 
@@ -611,16 +667,22 @@ train_features=train.data
 test_features=test.data
 
 
+
 predictions=train_glmnet(train_features, test_features, not_included_feature_indices=c(1:5), alpha=1,nlambda=10, tune_lambda=TRUE,nofReplications=2,nFolds=10,trace=T)
 data_predictions=predictions$predictions
+
+a<-predictions$predictions
 
 ```
 
 #last week
 ```{r}
 
-  dt_playedmatches<-dt_matches[date<="2018-12-10" & date>="2018-12-8"]
-  
+  dt_playedmatches<-dt_matches[date>="2018-12-18" & date<="2018-12-25"]
+
+data_predictions<-data_predictions[order(matchId),]
+dt_playedmatches<-dt_playedmatches[order(matchId),]  
+
   data_rps<-RPS_matrix(data_predictions[,.(Home,Tie,Away)],dt_playedmatches[,.(ResultHome,ResultTie,ResultAway)])
 
   dt_playedmatches$rps<-data.frame(data_rps)
