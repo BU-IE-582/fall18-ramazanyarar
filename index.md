@@ -19,3 +19,7 @@
 ## Week 4 
 
 [Here](files/Homework_4.html) is homework 4
+
+## Bonus Homework
+
+[Here](files/homework_bonus.html) is bonus homework
