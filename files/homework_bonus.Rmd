@@ -74,8 +74,6 @@ hclust.rf<- hcut(as.dist(1-rf$proximity),k=4, hc_method = "ward.D")
 
 fviz_cluster(hclust.rf, data = dataset)
 
-# cut 4 group
-#hcgroups <- cutree(hclust.rf, k=4)
 dataset$hc=hclust.rf$cluster
 
 
