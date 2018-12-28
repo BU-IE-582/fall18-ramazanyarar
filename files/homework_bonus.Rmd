@@ -1,0 +1,239 @@
+---
+title: "Bonus Homework"
+author: "Ramazan Yarar"
+date: "12/26/2018"
+output: html_document
+---
+
+
+## Data Preparation
+
+```{r setup ,message=FALSE,error=FALSE}
+
+library(MASS)
+library(clusterGeneration)
+library(LaplacesDemon)
+library(graphics)
+library(cluster)
+library(factoextra)
+library(data.table)
+library(randomForest)
+
+
+#generate 4 different covariance matrix with different range
+sigma1<-genPositiveDefMat(8, covMethod="onion", rangeVar=c(70,75))
+
+sigma2<-genPositiveDefMat(8, covMethod="onion", rangeVar=c(85,90))
+
+sigma3<-genPositiveDefMat(8, covMethod="onion", rangeVar=c(55,60))
+
+sigma4<-genPositiveDefMat(8, covMethod="onion", rangeVar=c(60,65))
+
+
+
+#generate 4 different mean  w
+mn1 <- c(5,10,150,120,75,100,50,25)
+
+mn2 <- c(75,125,125,75,100,65,100,20)
+
+mn3 <- c(110,15,135,75,150,55,10,35)
+
+mn4 <- c(135,75,170,50,125,45,75,15)
+
+
+
+# create data point
+
+
+points1 <- mvrnorm(500, mu = mn1, Sigma = sigma1$Sigma )
+points2<-mvrnorm(500, mu = mn2, Sigma = sigma2$Sigma )
+points3<-mvrnorm(500, mu = mn3, Sigma = sigma3$Sigma )
+points4<-mvrnorm(500, mu = mn4, Sigma = sigma4$Sigma )
+
+dataset<-rbind(points1,points2,points3,points4)
+
+dataset<-data.table(dataset)
+
+```
+
+
+
+## Clustering 
+
+
+```{r ,message=FALSE,error=FALSE}
+
+
+
+#hierarchical clustering with Ward???s method
+
+rf <- randomForest(x = dataset, y = NULL, ntree = 1000, proximity = TRUE, oob.prox = TRUE)
+#hclust.rf <- hclust(as.dist(1-rf$proximity), method = "ward.D")
+
+hclust.rf<- hcut(as.dist(1-rf$proximity),k=4, hc_method = "ward.D")
+
+fviz_cluster(hclust.rf, data = dataset)
+
+# cut 4 group
+#hcgroups <- cutree(hclust.rf, k=4)
+dataset$hc=hclust.rf$cluster
+
+
+
+# k medoids
+a<-as.dist(1-rf$proximity)
+rf.kmedoids <- pam(a,4,metric = "euclidean", stand = FALSE)
+                   
+dataset$kmedoids=rf.kmedoids$clustering
+
+ 
+ #k means
+ 
+ kmeans<-kmeans(dataset[,1:8], centers=4, nstart=10)
+                   
+ 
+ fviz_cluster(kmeans, data = dataset)
+
+
+
+
+
+
+```
+
+
+
+
+
+## Comparing Cluster
+
+
+
+```{r ,message=FALSE,error=FALSE}
+
+meantablehc<-data.table(matrix(0, nrow = 4, ncol = 8))
+meantablemedoids<-data.table(matrix(0, nrow = 4, ncol = 8))
+
+
+for (i in 1:4 ){
+  
+  meanhc<-data.table(t(colMeans(dataset[hc==i])))
+  meanmedoids<-data.table(t(colMeans(dataset[kmedoids==i])))
+  
+  meantablemedoids[i,]<-meanmedoids[,1:8]
+  meantablehc[i,]<-meanhc[,1:8]
+  
+}
+
+
+
+mn1 <- c(5,10,150,120,75,100,50,25)
+mn2 <- c(75,125,125,75,100,65,100,20)
+
+mn3 <- c(110,15,135,75,150,55,10,35)
+
+mn4 <- c(135,75,170,50,125,45,75,15)
+
+
+{print("initial means")
+print(rbind(mn1,mn2,mn3,mn4))
+print("hierarchical clustering")
+print(as.matrix(meantablehc))
+print("k medoids")
+print(as.matrix(meantablemedoids))
+print("k means")
+print(as.matrix(kmeans$centers))}
+
+```
+
+
+# Clustering Data with noise
+
+
+
+```{r ,message=FALSE,error=FALSE}
+
+
+noise<-rbern(2000,.4)
+
+datasetn<-as.vector(dataset[,1:8])+noise
+
+
+
+#hierarchical clustering with Ward???s method
+
+rfn <- randomForest(x = datasetn, y = NULL, ntree = 1000, proximity = TRUE, oob.prox = TRUE)
+#hclust.rf <- hclust(as.dist(1-rf$proximity), method = "ward.D")
+
+
+hclust.rfn<- hcut(as.dist(1-rfn$proximity),k=4, hc_method = "ward.D")
+
+fviz_cluster(hclust.rfn, data = datasetn)
+
+datasetn$hc=hclust.rfn$cluster
+
+
+
+# k medoids
+a<-as.dist(1-rfn$proximity)
+rfn.kmedoids <- pam(a,4,metric = "euclidean", stand = FALSE)
+                   
+datasetn$kmedoids=rfn.kmedoids$clustering
+
+ 
+ #k means
+ 
+ kmeansn<-kmeans(datasetn[,1:8], centers=4, nstart=10) 
+                   
+ 
+ fviz_cluster(kmeansn, data = datasetn)
+
+
+
+
+```
+
+
+
+
+# Comparing New Clusters
+
+
+```{r ,message=FALSE,error=FALSE}
+meantablehcn<-data.table(matrix(0, nrow = 4, ncol = 8))
+meantablemedoidsn<-data.table(matrix(0, nrow = 4, ncol = 8))
+
+
+for (i in 1:4 ){
+  
+  meanhcn<-data.table(t(colMeans(datasetn[hc==i])))
+  meanmedoidsn<-data.table(t(colMeans(datasetn[kmedoids==i])))
+  
+  meantablemedoidsn[i,]<-meanmedoidsn[,1:8]
+  meantablehcn[i,]<-meanhcn[,1:8]
+  
+}
+
+
+
+{
+print("initial means")
+print(rbind(mn1,mn2,mn3,mn4))
+print("hierarchical clustering")
+print(as.matrix(meantablehcn))
+print("k medoids")
+print(as.matrix(meantablemedoidsn))
+print("k means")
+print(as.matrix(kmeansn$centers))
+}
+```
+
+
+
+
+## Results 
+
+All of clustering methods gives nearly same means vector with initial means. It show us that random forest similarity  is very efficient also robust to noise in data. Random forest similarity searches features and samples in the same terminal node increase their proximity by one. At the end, normalize the proximities by dividing by the number of trees. Because of wide and  multiple ensemble-learning, it gives good results. If we increase dimension of variables , we can get similar results ,although it took more  computation time. 
+
+
+
