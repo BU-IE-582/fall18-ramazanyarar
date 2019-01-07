@@ -37,7 +37,7 @@ dt_odds_pvt$drawprob <-as.numeric((1/dt_odds_pvt$oddX)*(1/((1/dt_odds_pvt$odd1)+
 dt_matches<-dt_matches[date>1406913631] # 1 A??utos 2017
 dt_matches <- dt_matches[,date:=as.Date(as.POSIXct(date,origin="1970-01-01",tz = "UTC",tryformats="%Y/%m/%d"))]
 dt_matches<-dt_matches[date<=lastdayofweek]
-dt_matches[date>=firstdayofweek,c("score")]=NA ## remove result t?? simulate t 
+dt_matches[date>=firstdayofweek,c("score")]=NA ## remove result tı simulate t 
 dt_matches[,c("HomeGoal","AwayGoal"):= tstrsplit(score,":",fixed=TRUE)]
 dt_matches[,`:=`(MatchResult = ifelse(HomeGoal == AwayGoal, "Tie" , ifelse(HomeGoal > AwayGoal, 'Home' , 'Away')))]
 dt_matches[,`:=`(ResultHome = ifelse(MatchResult=="Home",1,0)
