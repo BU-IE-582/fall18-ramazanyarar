@@ -23,3 +23,11 @@
 ## Bonus Homework
 
 [Here](files/homework_bonus.html) is bonus homework
+
+## Project Report
+
+[Here](files/Project_Group13.html) is project report
+
+## Project Code
+
+[Here](files/IE-582_FinalProject_Code.R) is project code
