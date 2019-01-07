@@ -9,7 +9,7 @@ require(glmnet)
 library(base)
 
 
-firstdayofweek<-as.Date("2018-12-29") # it is important to create fixture and season before predicted matches
+firstdayofweek<-as.Date("2018-11-29") # it is important to create fixture and season before predicted matches
 lastdayofweek<-as.Date("2018-12-30")
 
 
