@@ -1,0 +1,167 @@
+---
+title: "Homework_5"
+author: "Ramazan Yarar"
+date: "1/3/2019"
+output: html_document
+---
+
+
+ ## Homework5
+ 
+```{r message=FALSE,error=FALSE}
+library(cluster)
+library(MASS)
+library(clusterGeneration)
+library(factoextra)
+library(rattle)
+library(pdist)
+library(data.table)
+library(caret)
+library(glmnet)
+
+data_musk<-read.table("~/Documents/Dersler/Fall-2018/IE-582/Musk1.csv",header = FALSE, sep = ",")
+
+data_musk<-cbind(data_musk[,1:2],scale(data_musk[,3:168]))
+
+```
+
+## R Markdow
+
+```{r cars}
+
+
+
+kmedoids.musk<-pam(data_musk[,3:168],k=5)
+
+
+# find best cluster count with elbow and silhouette methods
+
+
+
+fviz_nbclust(data_musk[,3:168], pam, method = "wss") +
+    geom_vline(xintercept = 4, linetype = 2)
+
+fviz_nbclust(data_musk[,3:168], hcut, method = "silhouette",dist(data_musk[,3:168], method = "euclidean"),
+             hc_method = "ward.D")
+
+fviz_nbclust(data_musk[,3:168], pam, method = "silhouette") +
+    geom_vline(xintercept = 3, linetype = 2)
+
+
+
+fviz_nbclust(data_musk[,3:168], hcut, method = "silhouette",dist(data_musk[,3:168], method = "minkowski"),
+             hc_method = "ward.D")
+
+```
+
+
+
+ The elbow andsilhouette methods shows that the optimal number of cluster is 3. But ?? prefer 5 cluster to increase features to classification.  
+
+
+## Step 2
+
+
+```{r pressure, echo=FALSE}
+
+
+
+
+hclust.musk<- hcut(data_musk[,3:168], hc_method = "ward.D",hc_metric = "euclidean",k=5)
+
+hclust.muskm<- hcut(data_musk[,3:168], hc_method = "ward.D",hc_metric = "minkowski",k=5)
+
+
+hclust.musk_centreoids<-centers.hclust(data_musk[,3:168],hclust.musk, nclust=5, use.median=TRUE)
+
+hclust.muskm_centreoids<-centers.hclust(data_musk[,3:168],hclust.muskm, nclust=5, use.median=TRUE)
+
+dist_hclust_eucl<-pdist(data_musk[,3:168],hclust.musk_centreoids)@dist
+
+dist_hclust_min<-pdist(data_musk[,3:168],hclust.muskm_centreoids)@dist
+
+
+data_hclust_eucl<-cbind(data_musk[,1:2],data.table(matrix(dist_hclust_eucl,nrow = 476,ncol = 5)))
+
+
+dist_hclust_min<-cbind(data_musk[,1:2],data.table(matrix(dist_hclust_min,nrow = 476,ncol = 5)))
+
+
+
+# k medoids
+
+kmedoids.musk<-pam(data_musk[,3:168],k=5)
+
+kmedoids_centroids<-kmedoids.musk$medoids
+
+
+dist_kmedoids<-pdist(data_musk[,3:168],kmedoids_centroids)@dist
+
+data_kmedoids<-cbind(data_musk[,1:2],data.table(matrix(dist_kmedoids,nrow = 476,ncol = 5)))
+
+data_keybag<-data.table(unique(data_musk[,1:2]))
+
+#pdist(data_musk[1,3:168 ] , kmedoids_centroids [3, ])
+
+
+
+```
+
+
+
+
+
+```{r}
+
+
+
+data_kmedoids_ag<-data.table(aggregate(data_kmedoids[,3:7], list(data_kmedoids[,2]), mean))
+
+data_hclust_eucl_ag<-data.table(aggregate(data_hclust_eucl[,3:7], list(data_hclust_eucl[,2]), mean))
+
+data_hclust_min_ag<-data.table(aggregate(dist_hclust_min[,3:7], list(dist_hclust_min[,2]), mean))
+
+
+
+data_kmedoids <- merge(data_kmedoids_ag,data_keybag,by.x = "Group.1", by.y = "V2",all.x =TRUE)
+
+data_kmedoids <- merge(data_kmedoids_ag,data_keybag,by.x = "Group.1", by.y = "V2",all.x =TRUE)
+
+
+
+
+
+
+```
+
+
+
+
+
+```{r}
+
+training.kmedoids<- data_kmedoids$V1.y %>% createDataPartition(p = 0.8, list = FALSE)
+trainmedoids<-data_kmedoids[training.kmedoids,]
+testmedoids<-data_kmedoids[-training.kmedoids]
+
+x_trainmedoids<- as.matrix(trainmedoids[,2:6])
+y_trainmedoids<- trainmedoids$V1.y
+
+x_testbank<- as.matrix(testbank[,1:64])
+y_testbank<- testbank$class
+
+
+modelprakmedoids <- cv.glmnet(x_trainmedoids, y_trainmedoids, alpha = 1,nfolds=7,type.measure='auc',family="binomial")
+
+
+
+modelprakmedoids
+
+```
+
+
+
+
+
+
+
