@@ -26,7 +26,7 @@
 
 ## Project Report
 
-[Here](files/ProjectFinal_Group13.R.html) is project report
+[Here](files/ProjectFinal_Group13.html) is project report
 
 ## Project Code
 
