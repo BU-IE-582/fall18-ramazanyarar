@@ -9,8 +9,8 @@ require(glmnet)
 library(base)
 
 
-firstdayofweek<-as.Date("2018-11-30") # it is important to create fixture and season before predicted matches
-lastdayofweek<-as.Date("2018-12-31")
+firstdayofweek<-as.Date("2018-12-29") # it is important to create fixture and season before predicted matches
+lastdayofweek<-as.Date("2018-12-30")
 
 
 #data import
@@ -33,11 +33,13 @@ dt_odds_pvt$drawprob <-as.numeric((1/dt_odds_pvt$oddX)*(1/((1/dt_odds_pvt$odd1)+
 
 ## Match Dataprocessing 
 
-dt_matches[,c("HomeGoal","AwayGoal"):= tstrsplit(score,":",fixed=TRUE)]
+
 dt_matches<-dt_matches[date>1406913631] # 1 A??utos 2017
 dt_matches <- dt_matches[,date:=as.Date(as.POSIXct(date,origin="1970-01-01",tz = "UTC",tryformats="%Y/%m/%d"))]
+dt_matches<-dt_matches[date<=lastdayofweek]
+dt_matches[date>=firstdayofweek,c("score")]=NA ## remove result t?? simulate t 
+dt_matches[,c("HomeGoal","AwayGoal"):= tstrsplit(score,":",fixed=TRUE)]
 dt_matches[,`:=`(MatchResult = ifelse(HomeGoal == AwayGoal, "Tie" , ifelse(HomeGoal > AwayGoal, 'Home' , 'Away')))]
-
 dt_matches[,`:=`(ResultHome = ifelse(MatchResult=="Home",1,0)
                  ,ResultTie = ifelse(MatchResult=="Tie",1,0)
                  ,ResultAway = ifelse(MatchResult=="Away",1,0))]
@@ -428,22 +430,12 @@ train_glmnet <- function(train_features, test_features,not_included_feature_indi
 ### create dataset and model evaluation
 
 
-#remove(dt_season1)
-#a<-dt_season1[date<firstdayofweek]
+
 
 
 fixture<-fixture_create(dt_season1)
-fixture<-fixture_create(dt_season1[date<firstdayofweek])## filter played matches to evaluate t moment for old weeks
-model_data_sz1f<-feature_extract(dt_season1[date<firstdayofweek])
+model_data_sz1<-feature_extract(dt_season1)
 
-fixture<-fixture_create(dt_season1[date>=firstdayofweek])## filter played matches to evaluate t moment for old weeks
-model_data_sz1l<-feature_extract(dt_season1[date>=firstdayofweek])
-
-model_data_sz1<-rbind(model_data_sz1f,model_data_sz1l)
-
-#model_data_sz1<-feature_extract(dt_season1)
-#colnames(dt_season2)
-#colnames(model_data_sz2)
 
 fixture<-fixture_create(dt_season2)
 model_data_sz2<-feature_extract(dt_season2)
@@ -501,10 +493,18 @@ for (i in 1:10)
 
 ## evaluate performance of  matches
 
-#start_date<-as.Date('2018-11-16')
-#finis_date<-as.Date('2012-07-15')
+## get played match results
+
+dt_matches <- readRDS("~/Documents/Dersler/Fall-2018/IE-582/df9b1196-e3cf-4cc7-9159-f236fe738215_matches.rds")
+dt_matches <- dt_matches[,date:=as.Date(as.POSIXct(date,origin="1970-01-01",tz = "UTC",tryformats="%Y/%m/%d"))]
+dt_matches[,c("HomeGoal","AwayGoal"):= tstrsplit(score,":",fixed=TRUE)]
+dt_matches[,`:=`(MatchResult = ifelse(HomeGoal == AwayGoal, "Tie" , ifelse(HomeGoal > AwayGoal, 'Home' , 'Away')))]
+dt_matches[,`:=`(ResultHome = ifelse(MatchResult=="Home",1,0)
+                 ,ResultTie = ifelse(MatchResult=="Tie",1,0)
+                 ,ResultAway = ifelse(MatchResult=="Away",1,0))]
 
 dt_playedmatches<-dt_matches[date>=firstdayofweek & date<=lastdayofweek]
+
 
 data_predictions<-data_predictions[order(matchId),]
 dt_playedmatches<-dt_playedmatches[order(matchId),]  
