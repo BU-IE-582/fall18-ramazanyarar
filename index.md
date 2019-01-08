@@ -24,6 +24,10 @@
 
 [Here](files/homework_bonus.html) is bonus homework
 
+## Week 5 
+
+[Here](files/HHomework_5.html) is homework 5
+
 ## Project Report
 
 [Here](files/FinalProject_Group13.html) is final project report
