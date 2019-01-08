@@ -6,7 +6,7 @@ output: html_document
 ---
 
 
- ## Homework5
+# Step 1
  
 ```{r message=FALSE,error=FALSE}
 library(cluster)
@@ -25,7 +25,8 @@ data_musk<-cbind(data_musk[,1:2],scale(data_musk[,3:168]))
 
 ```
 
-## R Markdow
+* Clustering
+
 
 ```{r cars}
 
@@ -38,34 +39,26 @@ kmedoids.musk<-pam(data_musk[,3:168],k=5)
 
 
 
-fviz_nbclust(data_musk[,3:168], pam, method = "wss") +
-    geom_vline(xintercept = 4, linetype = 2)
+fviz_nbclust(data_musk[,3:168], pam, method = "wss") 
 
 fviz_nbclust(data_musk[,3:168], hcut, method = "silhouette",dist(data_musk[,3:168], method = "euclidean"),
              hc_method = "ward.D")
 
-fviz_nbclust(data_musk[,3:168], pam, method = "silhouette") +
-    geom_vline(xintercept = 3, linetype = 2)
-
-
-
-fviz_nbclust(data_musk[,3:168], hcut, method = "silhouette",dist(data_musk[,3:168], method = "minkowski"),
-             hc_method = "ward.D")
 
 ```
 
 
 
- The elbow andsilhouette methods shows that the optimal number of cluster is 3. But ?? prefer 5 cluster to increase features to classification.  
+ The elbow andsilhouette methods shows that the optimal number of cluster is 3. But I prefer 5 and 10 cluster to increase features to classification.  
 
 
-## Step 2
 
 
 ```{r pressure, echo=FALSE}
 
+# 5 cluster
 
-
+# hierchical clustering
 
 hclust.musk<- hcut(data_musk[,3:168], hc_method = "ward.D",hc_metric = "euclidean",k=5)
 
@@ -76,6 +69,8 @@ hclust.musk_centreoids<-centers.hclust(data_musk[,3:168],hclust.musk, nclust=5, 
 
 hclust.muskm_centreoids<-centers.hclust(data_musk[,3:168],hclust.muskm, nclust=5, use.median=TRUE)
 
+#distance to centroids
+
 dist_hclust_eucl<-pdist(data_musk[,3:168],hclust.musk_centreoids)@dist
 
 dist_hclust_min<-pdist(data_musk[,3:168],hclust.muskm_centreoids)@dist
@@ -84,7 +79,7 @@ dist_hclust_min<-pdist(data_musk[,3:168],hclust.muskm_centreoids)@dist
 data_hclust_eucl<-cbind(data_musk[,1:2],data.table(matrix(dist_hclust_eucl,nrow = 476,ncol = 5)))
 
 
-dist_hclust_min<-cbind(data_musk[,1:2],data.table(matrix(dist_hclust_min,nrow = 476,ncol = 5)))
+data_hclust_min<-cbind(data_musk[,1:2],data.table(matrix(dist_hclust_min,nrow = 476,ncol = 5)))
 
 
 
@@ -94,6 +89,7 @@ kmedoids.musk<-pam(data_musk[,3:168],k=5)
 
 kmedoids_centroids<-kmedoids.musk$medoids
 
+#distance to centroids
 
 dist_kmedoids<-pdist(data_musk[,3:168],kmedoids_centroids)@dist
 
@@ -101,7 +97,6 @@ data_kmedoids<-cbind(data_musk[,1:2],data.table(matrix(dist_kmedoids,nrow = 476,
 
 data_keybag<-data.table(unique(data_musk[,1:2]))
 
-#pdist(data_musk[1,3:168 ] , kmedoids_centroids [3, ])
 
 
 
@@ -109,6 +104,7 @@ data_keybag<-data.table(unique(data_musk[,1:2]))
 
 
 
+* Step 3
 
 
 ```{r}
@@ -119,16 +115,14 @@ data_kmedoids_ag<-data.table(aggregate(data_kmedoids[,3:7], list(data_kmedoids[,
 
 data_hclust_eucl_ag<-data.table(aggregate(data_hclust_eucl[,3:7], list(data_hclust_eucl[,2]), mean))
 
-data_hclust_min_ag<-data.table(aggregate(dist_hclust_min[,3:7], list(dist_hclust_min[,2]), mean))
-
+data_hclust_min_ag<-data.table(aggregate(data_hclust_min[,3:7], list(data_hclust_min[,2]), mean))
 
 
 data_kmedoids <- merge(data_kmedoids_ag,data_keybag,by.x = "Group.1", by.y = "V2",all.x =TRUE)
 
-data_kmedoids <- merge(data_kmedoids_ag,data_keybag,by.x = "Group.1", by.y = "V2",all.x =TRUE)
+data_hclust_eucl <- merge(data_hclust_eucl_ag,data_keybag,by.x = "Group.1", by.y = "V2",all.x =TRUE)
 
-
-
+data_hclust_min <- merge(data_hclust_min_ag,data_keybag,by.x = "Group.1", by.y = "V2",all.x =TRUE)
 
 
 
@@ -140,25 +134,145 @@ data_kmedoids <- merge(data_kmedoids_ag,data_keybag,by.x = "Group.1", by.y = "V2
 
 ```{r}
 
-training.kmedoids<- data_kmedoids$V1.y %>% createDataPartition(p = 0.8, list = FALSE)
-trainmedoids<-data_kmedoids[training.kmedoids,]
-testmedoids<-data_kmedoids[-training.kmedoids]
-
-x_trainmedoids<- as.matrix(trainmedoids[,2:6])
-y_trainmedoids<- trainmedoids$V1.y
-
-x_testbank<- as.matrix(testbank[,1:64])
-y_testbank<- testbank$class
+summary=data.table(algorithms=character(), Auc=numeric(),FeatureCount=numeric())
 
 
-modelprakmedoids <- cv.glmnet(x_trainmedoids, y_trainmedoids, alpha = 1,nfolds=7,type.measure='auc',family="binomial")
+x_medoids<- as.matrix(data_kmedoids[,2:6])
+y_medoids<- data_kmedoids$V1.y
+
+modelprakmedoids <- cv.glmnet(x_medoids, y_medoids, alpha = 1,nfolds=7,type.measure='auc',family="binomial")
+
+summary<-rbind(summary,list("kmedoids",max(modelprakmedoids$cvm),5))
+
+#max(modelprakmedoids$cvm)
+
+x_hclust_eucl<-as.matrix(data_hclust_eucl[,2:6])
+y_hclust_eucl<- data_hclust_eucl$V1.y
+
+modelprahclust_eucl <- cv.glmnet(x_hclust_eucl, y_hclust_eucl, alpha = 1,nfolds=7,type.measure='auc',family="binomial")
+
+
+summary<-rbind(summary,list("hclust_euclidean",max(modelprahclust_eucl$cvm),5))
+#max(modelprahclust_eucl$cvm)
+
+
+x_hclust_minl<-as.matrix(data_hclust_min[,2:6])
+y_hclust_minl<- data_hclust_min$V1.y
+
+modelprahclust_minl <- cv.glmnet(x_hclust_minl, y_hclust_minl, alpha = 1,nfolds=7,type.measure='auc',family="binomial")
+
+summary<-rbind(summary,list("hclust_minkowski",max(modelprahclust_minl$cvm),5))
 
 
 
-modelprakmedoids
 
 ```
 
+
+
+* 10 cluster
+
+```{r}
+
+hclust.musk10<- hcut(data_musk[,3:168], hc_method = "ward.D",hc_metric = "euclidean",k=10)
+
+hclust.muskm10<- hcut(data_musk[,3:168], hc_method = "ward.D",hc_metric = "minkowski",k=10)
+
+
+hclust.musk_centreoids10<-centers.hclust(data_musk[,3:168],hclust.musk, nclust=10, use.median=TRUE)
+
+hclust.muskm_centreoids10<-centers.hclust(data_musk[,3:168],hclust.muskm, nclust=10, use.median=TRUE)
+
+dist_hclust_eucl10<-pdist(data_musk[,3:168],hclust.musk_centreoids10)@dist
+
+dist_hclust_min10<-pdist(data_musk[,3:168],hclust.muskm_centreoids10)@dist
+
+
+data_hclust_eucl10<-cbind(data_musk[,1:2],data.table(matrix(dist_hclust_eucl10,nrow = 476,ncol = 10)))
+
+
+data_hclust_min10<-cbind(data_musk[,1:2],data.table(matrix(dist_hclust_min10,nrow = 476,ncol = 10)))
+
+
+
+# k medoids
+
+kmedoids.musk10<-pam(data_musk[,3:168],k=10)
+
+kmedoids_centroids10<-kmedoids.musk10$medoids
+
+
+dist_kmedoids10<-pdist(data_musk[,3:168],kmedoids_centroids10)@dist
+
+data_kmedoids10<-cbind(data_musk[,1:2],data.table(matrix(dist_kmedoids10,nrow = 476,ncol = 10)))
+
+data_keybag<-data.table(unique(data_musk[,1:2]))
+
+
+
+```
+
+
+##
+
+
+
+
+```{r}
+
+data_kmedoids_ag10<-data.table(aggregate(data_kmedoids10[,3:12], list(data_kmedoids10[,2]), mean))
+
+data_hclust_eucl_ag10<-data.table(aggregate(data_hclust_eucl10[,3:12], list(data_hclust_eucl10[,2]), mean))
+
+data_hclust_min_ag10<-data.table(aggregate(data_hclust_min10[,3:12], list(data_hclust_min10[,2]), mean))
+
+
+data_kmedoids10 <- merge(data_kmedoids_ag10,data_keybag,by.x = "Group.1", by.y = "V2",all.x =TRUE)
+
+data_hclust_eucl10 <- merge(data_hclust_eucl_ag10,data_keybag,by.x = "Group.1", by.y = "V2",all.x =TRUE)
+
+data_hclust_min10 <- merge(data_hclust_min_ag10,data_keybag,by.x = "Group.1", by.y = "V2",all.x =TRUE)
+
+```
+
+
+
+
+
+
+
+```{r}
+x_medoids10<- as.matrix(data_kmedoids10[,3:12])
+y_medoids10<- data_kmedoids10$V1.y
+
+modelprakmedoids10 <- cv.glmnet(x_medoids10, y_medoids10, alpha = 1,nfolds=7,type.measure='auc',family="binomial")
+
+summary<-rbind(summary,list("kmedoids",max(modelprakmedoids10$cvm),10))
+#max(modelprakmedoids10$cvm)
+
+x_hclust_eucl10<-as.matrix(data_hclust_eucl10[,3:12])
+y_hclust_eucl10<- data_hclust_eucl10$V1.y
+
+modelprahclust_eucl10 <- cv.glmnet(x_hclust_eucl10, y_hclust_eucl10, alpha = 1,nfolds=7,type.measure='auc',family="binomial")
+
+summary<-rbind(summary,list("hclust_euclidean",max(modelprahclust_eucl10$cvm),10))
+#max(modelprahclust_eucl10$cvm)
+
+
+x_hclust_minl10<-as.matrix(data_hclust_min10[,3:12])
+y_hclust_minl10<- data_hclust_min10$V1.y
+
+modelprahclust_minl10 <- cv.glmnet(x_hclust_minl10, y_hclust_minl10, alpha = 1,nfolds=9,type.measure='auc',family="binomial")
+
+summary<-rbind(summary,list("hclust_minkowski",max(modelprahclust_minl10$cvm),10))
+
+#max(modelprahclust_minl10$cvm)
+print(as.matrix(summary))
+
+```
+
+
+ In 5 cluster, The hierarchical clustering model using minkowski distance provide best auc value in 7-fold cross validated Lasso . Besides, when the 10 cluster was selected, all models gives good classifier and value converge on 1
 
 
 
